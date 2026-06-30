@@ -32,22 +32,40 @@ body {
   letter-spacing: -0.02em;
 }
 
-.header-row {
+.navbar {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: flex-start;
   gap: 16px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: #0e1014;
+  position: sticky;
+  top: 0;
+  z-index: 10;
 }
 
-.chat-cta {
-  background: var(--accent);
-  color: #0b0c0f;
-  border-radius: 8px;
-  padding: 10px 16px;
-  font-size: 14px;
-  font-weight: 600;
+.navbar .brand {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text);
   text-decoration: none;
-  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.navbar .nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.navbar .nav-links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.navbar .nav-links a:hover {
+  color: var(--text);
 }
 
 .subtitle {

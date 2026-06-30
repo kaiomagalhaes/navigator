@@ -66,7 +66,7 @@ export default function ChatPage() {
 
   return (
     <main className="page chat-page">
-      <Link href="/" className="back-link">
+      <Link href="/meetings" className="back-link">
         ← All meetings
       </Link>
       <header className="header">

@@ -34,7 +34,7 @@ export default async function MeetingDetail({
 
   return (
     <main className="page">
-      <Link href="/" className="back-link">
+      <Link href="/meetings" className="back-link">
         ← All meetings
       </Link>
 
