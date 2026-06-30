@@ -1,0 +1,114 @@
+// Navigator — Fathom meeting data + AI processing hub.
+// Models mirror the Fathom GET /meetings response so a daily sync can persist
+// the transcript, participants, summary, and action items for downstream AI.
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// One row per Fathom recording. `recordingId` is the natural key we upsert on.
+model Meeting {
+  id                          Int       @id @default(autoincrement())
+  recordingId                 Int       @unique
+  title                       String
+  meetingTitle                String?
+  meetingType                 String?
+  url                         String
+  meetingUrl                  String?
+  shareUrl                    String?
+  transcriptLanguage          String?
+  sharedWith                  String?
+  calendarInviteesDomainsType String?
+
+  // Timestamps reported by Fathom.
+  fathomCreatedAt    DateTime?
+  scheduledStartTime DateTime?
+  scheduledEndTime   DateTime?
+  recordingStartTime DateTime?
+  recordingEndTime   DateTime?
+
+  // Recorder ("recorded_by").
+  recordedByName   String?
+  recordedByEmail  String?
+  recordedByDomain String?
+  recordedByTeam   String?
+
+  // Default AI summary returned by Fathom.
+  summaryTemplateName String?
+  summaryMarkdown     String?
+
+  // Bookkeeping.
+  syncedAt      DateTime  @default(now()) @updatedAt
+  aiProcessedAt DateTime? // reserved for future AI analysis
+
+  participants Participant[]
+  transcript   TranscriptSegment[]
+  actionItems  ActionItem[]
+
+  @@index([fathomCreatedAt])
+  @@index([recordedByEmail])
+}
+
+/// A calendar invitee on the meeting.
+model Participant {
+  id                        Int     @id @default(autoincrement())
+  meeting                   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId                 Int
+  name                      String?
+  email                     String?
+  emailDomain               String?
+  isExternal                Boolean @default(false)
+  matchedSpeakerDisplayName String?
+
+  @@index([meetingId])
+  @@index([email])
+}
+
+/// One speaker turn in the transcript. `idx` preserves order.
+model TranscriptSegment {
+  id                  Int     @id @default(autoincrement())
+  meeting             Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId           Int
+  idx                 Int
+  speakerDisplayName  String?
+  matchedInviteeEmail String?
+  text                String
+  timestamp           String? // HH:MM:SS
+
+  @@index([meetingId])
+}
+
+/// An action item extracted by Fathom.
+model ActionItem {
+  id                   Int     @id @default(autoincrement())
+  meeting              Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  meetingId            Int
+  description          String
+  userGenerated        Boolean @default(false)
+  completed            Boolean @default(false)
+  recordingTimestamp   String? // HH:MM:SS
+  recordingPlaybackUrl String?
+  assigneeName         String?
+  assigneeEmail        String?
+  assigneeTeam         String?
+
+  @@index([meetingId])
+}
+
+/// Audit log of each sync invocation.
+model SyncRun {
+  id               Int       @id @default(autoincrement())
+  startedAt        DateTime  @default(now())
+  finishedAt       DateTime?
+  status           String    @default("running") // running | success | error
+  meetingsFetched  Int       @default(0)
+  meetingsMatched  Int       @default(0)
+  meetingsUpserted Int       @default(0)
+  error            String?
+}
