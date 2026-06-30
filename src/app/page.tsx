@@ -46,9 +46,14 @@ export default async function Home() {
 
   return (
     <main className="page">
-      <header className="header">
-        <h1>Navigator</h1>
-        <p className="subtitle">Fathom meeting data &amp; AI processing hub</p>
+      <header className="header header-row">
+        <div>
+          <h1>Navigator</h1>
+          <p className="subtitle">Fathom meeting data &amp; AI processing hub</p>
+        </div>
+        <Link href="/chat" className="chat-cta">
+          💬 Chat with your meetings
+        </Link>
       </header>
 
       <SyncControls defaultStart={range.start} defaultEnd={range.end} />
