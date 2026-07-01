@@ -25,7 +25,10 @@ export default async function MeetingDetail({
   const meeting = await prisma.meeting.findUnique({
     where: { recordingId: id },
     include: {
-      participants: true,
+      people: {
+        orderBy: [{ name: "asc" }, { email: "asc" }],
+        select: { id: true, name: true, email: true },
+      },
       actionItems: true,
       transcript: { orderBy: { idx: "asc" } },
     },
@@ -52,19 +55,27 @@ export default async function MeetingDetail({
       </header>
 
       <section className="detail-section">
-        <h2>Participants ({meeting.participants.length})</h2>
-        {meeting.participants.length === 0 ? (
+        <h2>Participants ({meeting.people.length})</h2>
+        {meeting.people.length === 0 ? (
           <p className="muted">No participants recorded.</p>
         ) : (
           <ul className="participants">
-            {meeting.participants.map((p) => (
+            {meeting.people.map((p) => (
               <li key={p.id}>
-                <span>{p.name ?? p.email ?? "Unknown"}</span>
-                {p.email && p.name && <span className="muted"> · {p.email}</span>}
-                {p.isExternal && <span className="badge">external</span>}
+                <Link href={`/people/${p.id}`}>
+                  {p.name ?? p.email ?? "Unknown"}
+                </Link>
+                {p.email && p.name && (
+                  <span className="muted"> · {p.email}</span>
+                )}
               </li>
             ))}
           </ul>
+        )}
+        {meeting.people.length > 0 && (
+          <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+            Click a participant to see their to-dos from your last 3 meetings.
+          </p>
         )}
       </section>
 

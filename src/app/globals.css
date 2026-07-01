@@ -135,6 +135,64 @@ body {
   color: #f08a8a;
 }
 
+.refresh-today {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.refresh-today button {
+  background: var(--accent);
+  color: #0b0c0f;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.refresh-today button:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.people-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+
+.people-search input[type="search"] {
+  flex: 1 1 280px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 14px;
+}
+
+.people-search button {
+  background: var(--accent);
+  color: #0b0c0f;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.people-clear {
+  font-size: 13px;
+  color: var(--muted);
+}
+
 .stats {
   display: flex;
   gap: 16px;
@@ -277,6 +335,13 @@ body {
 
 .action-items .checkbox {
   color: var(--accent);
+}
+
+/* Action items assigned to the person whose page we're on. */
+.action-items li.assigned-to {
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+  margin-left: -12px;
 }
 
 .summary {
@@ -516,4 +581,111 @@ body {
   border: 1px solid var(--border);
   padding: 6px 10px;
   text-align: left;
+}
+
+/* Daily view (agenda) */
+.cal-error {
+  background: rgba(240, 138, 138, 0.1);
+  border: 1px solid #5a2a2a;
+  color: #f0a0a0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+
+.agenda {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agenda-item {
+  display: flex;
+  gap: 20px;
+  padding: 16px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.agenda-item:hover {
+  background: var(--panel);
+  border-color: var(--border);
+}
+
+.agenda-time {
+  display: flex;
+  flex-direction: column;
+  min-width: 80px;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+
+.agenda-time .muted {
+  font-size: 12px;
+}
+
+.agenda-body {
+  flex: 1;
+}
+
+.agenda-title {
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agenda-meta {
+  margin-top: 4px;
+  display: flex;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.agenda-meta a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.cal-badge {
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 999px;
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+}
+
+.cal-codelitt {
+  color: #6ea8fe;
+  border-color: #2d4a7a;
+}
+
+.cal-carboncrei {
+  color: #5ed29a;
+  border-color: #2a5a44;
+}
+
+.agenda-footer {
+  margin-top: 32px;
+}
+
+.agenda-footer a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 14px;
+}
+
+.agenda-title a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.agenda-title a:hover {
+  color: var(--accent);
+  text-decoration: underline;
 }

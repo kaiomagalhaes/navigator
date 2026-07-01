@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/db";
 import { env } from "@/lib/env";
 import { fetchRecentMeetings } from "@/lib/sync/sources/mcp";
+import { upsertPerson } from "@/lib/people";
 import type { NormalizedMeeting } from "@/lib/sync/types";
 
 export interface SyncResult {
@@ -35,15 +36,22 @@ async function upsertMeeting(meeting: NormalizedMeeting): Promise<void> {
       update: base,
     });
 
-    await tx.participant.deleteMany({ where: { meetingId: saved.id } });
     await tx.transcriptSegment.deleteMany({ where: { meetingId: saved.id } });
     await tx.actionItem.deleteMany({ where: { meetingId: saved.id } });
 
-    if (participants.length > 0) {
-      await tx.participant.createMany({
-        data: participants.map((p) => ({ ...p, meetingId: saved.id })),
-      });
+    // Upsert each participant into the shared Person table and set the
+    // meeting's people to exactly that set. Deleting a meeting later removes
+    // only the join rows — the Person rows persist.
+    const personIds: number[] = [];
+    for (const p of participants) {
+      const person = await upsertPerson(tx, { email: p.email, name: p.name });
+      if (person) personIds.push(person.id);
     }
+    await tx.meeting.update({
+      where: { id: saved.id },
+      data: { people: { set: personIds.map((id) => ({ id })) } },
+    });
+
     if (transcript.length > 0) {
       await tx.transcriptSegment.createMany({
         data: transcript.map((t, idx) => ({ ...t, idx, meetingId: saved.id })),

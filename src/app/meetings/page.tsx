@@ -34,7 +34,7 @@ export default async function MeetingsPage() {
       take: 50,
       include: {
         _count: {
-          select: { participants: true, actionItems: true, transcript: true },
+          select: { people: true, actionItems: true, transcript: true },
         },
       },
     }),
@@ -94,7 +94,7 @@ export default async function MeetingsPage() {
                 </td>
                 <td>{formatDate(m.recordingStartTime ?? m.fathomCreatedAt)}</td>
                 <td>{m.recordedByName ?? m.recordedByEmail ?? "—"}</td>
-                <td className="num">{m._count.participants}</td>
+                <td className="num">{m._count.people}</td>
                 <td className="num">{m._count.actionItems}</td>
                 <td className="num">{m._count.transcript}</td>
               </tr>

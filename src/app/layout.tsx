@@ -31,7 +31,9 @@ export default function RootLayout({
             Navigator
           </Link>
           <div className="nav-links">
+            <Link href="/">Today</Link>
             <Link href="/meetings">Meetings</Link>
+            <Link href="/people">People</Link>
             <Link href="/chat">Chat</Link>
           </div>
         </nav>

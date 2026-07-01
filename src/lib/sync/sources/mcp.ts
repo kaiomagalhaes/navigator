@@ -43,9 +43,6 @@ function toParticipant(token: string): NormalizedParticipant {
   return {
     name: isEmail ? null : token,
     email: isEmail ? token : null,
-    emailDomain: isEmail ? (token.split("@")[1] ?? null) : null,
-    isExternal: false,
-    matchedSpeakerDisplayName: null,
   };
 }
 

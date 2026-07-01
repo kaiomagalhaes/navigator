@@ -4,9 +4,6 @@
 export interface NormalizedParticipant {
   name: string | null;
   email: string | null;
-  emailDomain: string | null;
-  isExternal: boolean;
-  matchedSpeakerDisplayName: string | null;
 }
 
 export interface NormalizedTranscriptSegment {

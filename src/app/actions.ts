@@ -2,10 +2,40 @@
 
 import { revalidatePath } from "next/cache";
 import { syncMeetings } from "@/lib/sync/sync-meetings";
+import { refreshTodayEvents, now } from "@/lib/calendar/daily";
 
 export interface SyncActionState {
   ok: boolean;
   message: string;
+}
+
+/**
+ * Server Action backing the daily view's "Refresh today's meetings" button.
+ * Re-fetches today's calendar feeds, upserts events + people, and removes
+ * events that disappeared from the feed (their people stay in the database).
+ */
+export async function refreshTodayCalendar(
+  _prev: SyncActionState | null,
+  _formData: FormData,
+): Promise<SyncActionState> {
+  try {
+    const { events, errors, removed } = await refreshTodayEvents(now());
+    revalidatePath("/");
+    if (errors.length > 0) {
+      return { ok: false, message: `Couldn't refresh: ${errors.join("; ")}` };
+    }
+    const removedNote =
+      removed > 0
+        ? `, removed ${removed} no longer on the calendar`
+        : "";
+    return {
+      ok: true,
+      message: `Refreshed ${events.length} meeting${events.length === 1 ? "" : "s"}${removedNote}.`,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, message };
+  }
 }
 
 /**

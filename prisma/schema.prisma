@@ -47,27 +47,29 @@ model Meeting {
   syncedAt      DateTime  @default(now()) @updatedAt
   aiProcessedAt DateTime? // reserved for future AI analysis
 
-  participants Participant[]
-  transcript   TranscriptSegment[]
-  actionItems  ActionItem[]
+  people      Person[]
+  transcript  TranscriptSegment[]
+  actionItems ActionItem[]
 
   @@index([fathomCreatedAt])
   @@index([recordedByEmail])
 }
 
-/// A calendar invitee on the meeting.
-model Participant {
-  id                        Int     @id @default(autoincrement())
-  meeting                   Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
-  meetingId                 Int
-  name                      String?
-  email                     String?
-  emailDomain               String?
-  isExternal                Boolean @default(false)
-  matchedSpeakerDisplayName String?
+/// A person (meeting attendee / calendar invitee), deduplicated by email and
+/// shared across meetings and calendar events. People outlive the meetings and
+/// events they were linked to: deleting a meeting/event removes only the join
+/// rows (implicit M2M), never the Person.
+model Person {
+  id        Int      @id @default(autoincrement())
+  email     String?  @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  @@index([meetingId])
-  @@index([email])
+  meetings Meeting[]
+  events   CalendarEvent[]
+
+  @@index([name])
 }
 
 /// One speaker turn in the transcript. `idx` preserves order.
@@ -111,4 +113,33 @@ model SyncRun {
   meetingsMatched  Int       @default(0)
   meetingsUpserted Int       @default(0)
   error            String?
+}
+
+/// A calendar event captured from a Google iCal feed on the first daily-view
+/// access of the day. Members are stored as emails only.
+model CalendarEvent {
+  id            Int       @id @default(autoincrement())
+  account       String // "codelitt" | "carboncrei"
+  uid           String
+  title         String
+  start         DateTime
+  end           DateTime?
+  allDay        Boolean   @default(false)
+  location      String?
+  conferenceUrl String?
+  day           String // YYYY-MM-DD (local) this row was captured for
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  people Person[]
+
+  @@unique([account, uid, start])
+  @@index([day])
+}
+
+/// Marks that a given local day's calendar has already been captured, so we
+/// fetch each feed at most once per day.
+model CalendarDaySync {
+  day      String   @id // YYYY-MM-DD (local)
+  syncedAt DateTime @default(now())
 }

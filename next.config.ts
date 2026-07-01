@@ -1,7 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // node-ical is CommonJS and pulls in Node-only deps; require it at runtime
+  // instead of bundling it for the server.
+  serverExternalPackages: ["node-ical"],
 };
 
 export default nextConfig;
