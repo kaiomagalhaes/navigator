@@ -63,7 +63,8 @@ export function ImportForm({
       {state.imported !== undefined && !state.error && (
         <p className="text-sm text-green-700 dark:text-green-400">
           Imported {state.imported} meeting{state.imported === 1 ? "" : "s"} and{" "}
-          {state.people} {state.people === 1 ? "person" : "people"}. See the{" "}
+          {state.people} {state.people === 1 ? "person" : "people"}
+          {state.linked ? `, linked ${state.linked} to Fathom` : ""}. See the{" "}
           <Link href="/events" className="underline">Events</Link> page.
         </p>
       )}

@@ -17,6 +17,7 @@ export async function listEvents() {
     orderBy: [desc(calendarEvents.startsAt)],
     with: {
       participants: { with: { person: true } },
+      fathomRecording: true,
     },
   });
 }

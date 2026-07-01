@@ -12,12 +12,50 @@ import {
   fetchMeetingsInWindow,
   fetchTranscript,
   pickBestMatch,
+  type FathomMeeting,
   type MatchableEvent,
 } from "@/lib/fathom-meetings";
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.
-export type ImportState = { error?: string; imported?: number; people?: number };
+// `linked` is how many events were auto-matched to a Fathom recording.
+export type ImportState = { error?: string; imported?: number; people?: number; linked?: number };
+
+// Fathom's API has no title/event-id filter, so we scan a ±12h window around
+// the event start; the match is then made on scheduled time + title + attendees.
+const FATHOM_WINDOW_MS = 12 * 60 * 60 * 1000;
+
+// Persist a matched Fathom recording for an event, pulling its transcript.
+// Idempotent: re-linking upserts the row. Shared by the import auto-link and
+// the manual "Sync with Fathom" action.
+async function linkFathomRecording(eventId: string, match: FathomMeeting): Promise<void> {
+  const transcript = await fetchTranscript(match.recordingId);
+  await db
+    .insert(fathomRecordings)
+    .values({
+      eventId,
+      recordingId: match.recordingId,
+      title: match.title,
+      url: match.url,
+      shareUrl: match.shareUrl,
+      summary: match.summary,
+      transcript,
+      scheduledStartTime: match.scheduledStartTime,
+    })
+    .onConflictDoUpdate({
+      target: fathomRecordings.eventId,
+      set: {
+        recordingId: match.recordingId,
+        title: match.title,
+        url: match.url,
+        shareUrl: match.shareUrl,
+        summary: match.summary,
+        transcript,
+        scheduledStartTime: match.scheduledStartTime,
+        syncedAt: new Date(),
+      },
+    });
+}
 
 // Turn a raw Google/Gaxios error into an actionable message. The failure mode
 // matters: a disabled API is a Cloud-project config fix, not a reconnect.
@@ -84,6 +122,8 @@ export async function importEvents(
   }
 
   const peopleSeen = new Set<string>();
+  // Collected for the Fathom auto-link pass after the events are committed.
+  const savedEvents: (MatchableEvent & { id: string })[] = [];
 
   await db.transaction(async (tx) => {
     for (const event of events) {
@@ -132,13 +172,54 @@ export async function importEvents(
           .values(personIds.map((personId) => ({ eventId: saved.id, personId })))
           .onConflictDoNothing();
       }
+
+      savedEvents.push({
+        id: saved.id,
+        name: event.name,
+        startsAt: event.startsAt,
+        emails: [
+          ...event.attendees.map((a) => a.email.toLowerCase()),
+          ...(event.organizerEmail ? [event.organizerEmail.toLowerCase()] : []),
+        ],
+      });
     }
   });
+
+  // Auto-link each imported event to its Fathom recording. Best-effort: a
+  // Fathom outage or rate limit must not fail the calendar import itself.
+  const linked = await linkImportedEvents(savedEvents);
 
   revalidatePath("/events");
   revalidatePath("/people");
   revalidatePath("/calendars");
-  return { imported: events.length, people: peopleSeen.size };
+  return { imported: events.length, people: peopleSeen.size, linked };
+}
+
+// Match a batch of freshly-imported events to Fathom recordings and link them.
+// Fetches the Fathom meeting list once for the whole span (not per event) to
+// stay well under the 60 req/min limit, then upserts each confident match.
+async function linkImportedEvents(events: (MatchableEvent & { id: string })[]): Promise<number> {
+  if (events.length === 0) return 0;
+
+  let linked = 0;
+  try {
+    const times = events.map((e) => e.startsAt.getTime());
+    const from = new Date(Math.min(...times) - FATHOM_WINDOW_MS);
+    const to = new Date(Math.max(...times) + FATHOM_WINDOW_MS);
+    const meetings = await fetchMeetingsInWindow(from, to);
+
+    for (const event of events) {
+      const match = pickBestMatch(event, meetings);
+      if (!match) continue;
+      await linkFathomRecording(event.id, match);
+      linked++;
+    }
+  } catch (err) {
+    // Log and move on — the events are already imported, and any recordings
+    // linked before the failure are already committed.
+    console.error("[importEvents:fathom]", err);
+  }
+  return linked;
 }
 
 // ---- Fathom sync -----------------------------------------------------------
@@ -149,10 +230,6 @@ export type FathomSyncState = {
   linkedTitle?: string;
   url?: string | null;
 };
-
-// Fathom's API has no title/event-id filter, so we scan a ±12h window around
-// the event start; the match is then made on scheduled time + title + attendees.
-const FATHOM_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 function describeFathomError(err: unknown): string {
   if (err instanceof FathomApiError) {
@@ -185,7 +262,6 @@ export async function syncEventWithFathom(
   const matchable: MatchableEvent = { name: event.name, startsAt: event.startsAt, emails };
 
   let match;
-  let transcript;
   try {
     const from = new Date(event.startsAt.getTime() - FATHOM_WINDOW_MS);
     const to = new Date(event.startsAt.getTime() + FATHOM_WINDOW_MS);
@@ -194,37 +270,11 @@ export async function syncEventWithFathom(
     if (!match) {
       return { notFound: true };
     }
-    transcript = await fetchTranscript(match.recordingId);
+    await linkFathomRecording(event.id, match);
   } catch (err) {
     console.error("[syncEventWithFathom]", err);
     return { error: describeFathomError(err) };
   }
-
-  await db
-    .insert(fathomRecordings)
-    .values({
-      eventId: event.id,
-      recordingId: match.recordingId,
-      title: match.title,
-      url: match.url,
-      shareUrl: match.shareUrl,
-      summary: match.summary,
-      transcript,
-      scheduledStartTime: match.scheduledStartTime,
-    })
-    .onConflictDoUpdate({
-      target: fathomRecordings.eventId,
-      set: {
-        recordingId: match.recordingId,
-        title: match.title,
-        url: match.url,
-        shareUrl: match.shareUrl,
-        summary: match.summary,
-        transcript,
-        scheduledStartTime: match.scheduledStartTime,
-        syncedAt: new Date(),
-      },
-    });
 
   revalidatePath(`/events/${event.id}`);
   return { linkedTitle: match.title ?? "Fathom recording", url: match.shareUrl ?? match.url };
@@ -235,4 +285,12 @@ export async function disconnectAccount(formData: FormData): Promise<void> {
   if (!accountId) return;
   await db.delete(googleAccounts).where(eq(googleAccounts.id, accountId));
   revalidatePath("/calendars");
+}
+
+// Remove every imported event. Cascades to participants and Fathom recordings;
+// people are left in place. Used by the "Delete all events" button.
+export async function deleteAllEvents(): Promise<void> {
+  await db.delete(calendarEvents);
+  revalidatePath("/events");
+  revalidatePath("/people");
 }
