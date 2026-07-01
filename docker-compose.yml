@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: navigator-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: navigator
+      POSTGRES_PASSWORD: navigator
+      POSTGRES_DB: navigator
+    ports:
+      - "5433:5432"
+    volumes:
+      - navigator-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U navigator -d navigator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  navigator-pgdata:
