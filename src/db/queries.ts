@@ -28,6 +28,7 @@ export async function getEvent(id: string) {
       participants: {
         with: { person: true },
       },
+      fathomRecording: true,
     },
   });
 }

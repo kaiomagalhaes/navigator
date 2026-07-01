@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // A connected Google account whose calendar we import from. Tokens are stored
@@ -53,11 +53,42 @@ export const eventParticipants = pgTable(
   (table) => [primaryKey({ columns: [table.eventId, table.personId] })]
 );
 
+// A Fathom meeting recording linked to a calendar event (1:1). Populated by the
+// "Sync with Fathom" action, which matches an event to a Fathom recording by
+// time + title + attendees. See src/lib/fathom-meetings.ts.
+export const fathomRecordings = pgTable("fathom_recordings", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  eventId: uuid("event_id")
+    .notNull()
+    .unique()
+    .references(() => calendarEvents.id, { onDelete: "cascade" }),
+  // Fathom recording_id (numeric in the API; stored as text for safety).
+  recordingId: text("recording_id").notNull(),
+  title: text("title"),
+  url: text("url"),
+  shareUrl: text("share_url"),
+  summary: text("summary"), // default_summary.markdown_formatted, when present
+  transcript: jsonb("transcript"), // normalized FathomTranscriptEntry[]
+  scheduledStartTime: timestamp("scheduled_start_time", { withTimezone: true }),
+  syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const calendarEventsRelations = relations(calendarEvents, ({ one, many }) => ({
   participants: many(eventParticipants),
   account: one(googleAccounts, {
     fields: [calendarEvents.accountId],
     references: [googleAccounts.id],
+  }),
+  fathomRecording: one(fathomRecordings, {
+    fields: [calendarEvents.id],
+    references: [fathomRecordings.eventId],
+  }),
+}));
+
+export const fathomRecordingsRelations = relations(fathomRecordings, ({ one }) => ({
+  event: one(calendarEvents, {
+    fields: [fathomRecordings.eventId],
+    references: [calendarEvents.id],
   }),
 }));
 
@@ -84,3 +115,4 @@ export type CalendarEvent = typeof calendarEvents.$inferSelect;
 export type Person = typeof persons.$inferSelect;
 export type EventParticipant = typeof eventParticipants.$inferSelect;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
+export type FathomRecording = typeof fathomRecordings.$inferSelect;

@@ -15,6 +15,13 @@
       "when": 1782866022735,
       "tag": "0001_busy_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782867592747,
+      "tag": "0002_medical_leo",
+      "breakpoints": true
     }
   ]
 }
