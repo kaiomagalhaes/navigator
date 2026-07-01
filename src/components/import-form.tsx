@@ -29,10 +29,13 @@ export function ImportForm({
         <label htmlFor="accountId" className="text-sm font-medium">
           Calendar
         </label>
-        <select id="accountId" name="accountId" required className={fieldClass} defaultValue="">
-          <option value="" disabled>
-            Select a connected calendar…
-          </option>
+        <select
+          id="accountId"
+          name="accountId"
+          required
+          className={fieldClass}
+          defaultValue={accounts[0]?.id ?? ""}
+        >
           {accounts.map((account) => (
             <option key={account.id} value={account.id}>
               {account.email}

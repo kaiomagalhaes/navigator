@@ -58,6 +58,7 @@ export async function fetchMeetingEvents(
   to: Date
 ): Promise<NormalizedEvent[]> {
   const raw = await listAllEvents(auth, from, to);
+  const now = new Date();
 
   const normalized: NormalizedEvent[] = [];
   for (const e of raw) {
@@ -76,6 +77,9 @@ export async function fetchMeetingEvents(
     const startsAt = eventDate(e.start ?? undefined);
     const endsAt = eventDate(e.end ?? undefined);
     if (!e.id || !startsAt || !endsAt) continue;
+
+    // Only import meetings that have already happened — skip future events.
+    if (startsAt > now) continue;
 
     normalized.push({
       googleEventId: e.id,

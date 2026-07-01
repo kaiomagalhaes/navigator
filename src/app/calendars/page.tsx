@@ -20,9 +20,11 @@ export default async function CalendarsPage({
   const accounts = await listGoogleAccounts();
   const { connected, error } = await searchParams;
 
+  // Default to the trailing week: only past meetings are imported (see
+  // fetchMeetingEvents), so the range runs from 7 days ago to today.
   const today = new Date();
-  const weekOut = new Date(today);
-  weekOut.setDate(today.getDate() + 7);
+  const weekAgo = new Date(today);
+  weekAgo.setDate(today.getDate() - 7);
 
   return (
     <div className="flex flex-col gap-10">
@@ -86,8 +88,8 @@ export default async function CalendarsPage({
           <h2 className="mb-4 text-lg font-medium">Import meetings</h2>
           <ImportForm
             accounts={accounts}
-            defaultFrom={toDateInput(today)}
-            defaultTo={toDateInput(weekOut)}
+            defaultFrom={toDateInput(weekAgo)}
+            defaultTo={toDateInput(today)}
           />
         </section>
       )}
