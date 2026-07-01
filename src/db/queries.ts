@@ -1,7 +1,15 @@
 import "server-only";
 import { asc, eq } from "drizzle-orm";
 import { db } from "./index";
-import { calendarEvents, persons } from "./schema";
+import { calendarEvents, googleAccounts, persons } from "./schema";
+
+// Connected Google accounts, without exposing stored tokens to callers/UI.
+export async function listGoogleAccounts() {
+  return db.query.googleAccounts.findMany({
+    orderBy: [asc(googleAccounts.createdAt)],
+    columns: { id: true, email: true, createdAt: true },
+  });
+}
 
 export async function listEvents() {
   return db.query.calendarEvents.findMany({
