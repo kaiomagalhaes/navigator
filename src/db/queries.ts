@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import { db } from "./index";
 import { calendarEvents, googleAccounts, persons } from "./schema";
 
@@ -13,7 +13,8 @@ export async function listGoogleAccounts() {
 
 export async function listEvents() {
   return db.query.calendarEvents.findMany({
-    orderBy: [asc(calendarEvents.startsAt)],
+    // Newest first (most recent / upcoming events at the top).
+    orderBy: [desc(calendarEvents.startsAt)],
     with: {
       participants: { with: { person: true } },
     },
@@ -49,14 +50,4 @@ export async function getPerson(id: string) {
       },
     },
   });
-}
-
-// People not already participating in the given event (for the "add participant" picker).
-export async function getAvailablePersonsForEvent(eventId: string) {
-  const event = await getEvent(eventId);
-  const takenIds = new Set(event?.participants.map((p) => p.personId));
-  const all = await db.query.persons.findMany({
-    orderBy: [asc(persons.name)],
-  });
-  return all.filter((p) => !takenIds.has(p.id));
 }

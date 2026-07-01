@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { listPersons } from "@/db/queries";
-import { PersonForm } from "@/components/person-form";
 
 export default async function PeoplePage() {
   const people = await listPersons();
@@ -14,14 +13,15 @@ export default async function PeoplePage() {
         </p>
       </div>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="mb-4 text-lg font-medium">New person</h2>
-        <PersonForm />
-      </section>
-
       <section>
         {people.length === 0 ? (
-          <p className="text-sm text-zinc-500">No people yet. Add one above.</p>
+          <p className="text-sm text-zinc-500">
+            No people yet. People appear here after you{" "}
+            <Link href="/calendars" className="underline">
+              import events
+            </Link>{" "}
+            — they come from meeting attendees.
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {people.map((person) => (

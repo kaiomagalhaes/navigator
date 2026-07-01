@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { listEvents } from "@/db/queries";
 import { formatRange } from "@/lib/format";
-import { EventForm } from "@/components/event-form";
 
 export default async function EventsPage() {
   const events = await listEvents();
@@ -15,14 +14,15 @@ export default async function EventsPage() {
         </p>
       </div>
 
-      <section className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="mb-4 text-lg font-medium">New event</h2>
-        <EventForm />
-      </section>
-
       <section>
         {events.length === 0 ? (
-          <p className="text-sm text-zinc-500">No events yet. Create one above.</p>
+          <p className="text-sm text-zinc-500">
+            No events yet.{" "}
+            <Link href="/calendars" className="underline">
+              Import from a connected calendar
+            </Link>
+            .
+          </p>
         ) : (
           <ul className="flex flex-col gap-3">
             {events.map((event) => (
