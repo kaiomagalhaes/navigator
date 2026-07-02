@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
+/* Force a light theme. The `dark:` variant is rebound to a `.dark` class that
+   is never added to <html>, so system dark-mode preference no longer flips the
+   existing `dark:` utilities. (Re-add a `.dark` toggle here to reintroduce it.) */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
+  color-scheme: light;
   --background: #ffffff;
   --foreground: #171717;
 }
@@ -10,13 +16,6 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
