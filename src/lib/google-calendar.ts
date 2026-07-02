@@ -51,6 +51,56 @@ async function listAllEvents(
   return events;
 }
 
+// A single item on the day's agenda. Unlike NormalizedEvent (used by the
+// import, which keeps only past multi-person meetings), this is everything on
+// the calendar for the day — solo blocks and upcoming events included.
+export type DayEvent = {
+  googleEventId: string;
+  name: string;
+  startsAt: Date;
+  endsAt: Date;
+  isAllDay: boolean;
+  location: string | null;
+  attendeeCount: number;
+};
+
+// Real meetings on the calendar between [from, to], sorted by start time. Like
+// fetchMeetingEvents it drops out-of-office / focus-time blocks and anything
+// with fewer than two people — but, unlike it, keeps upcoming events (this
+// powers the welcome page's "today at a glance" view).
+export async function fetchDayEvents(
+  auth: Auth.OAuth2Client,
+  from: Date,
+  to: Date
+): Promise<DayEvent[]> {
+  const raw = await listAllEvents(auth, from, to);
+
+  const events: DayEvent[] = [];
+  for (const e of raw) {
+    if (NON_MEETING_TYPES.has(e.eventType ?? "default")) continue;
+
+    const attendeeCount = (e.attendees ?? []).filter((a) => a.email && !a.resource).length;
+    if (attendeeCount < 2) continue; // skip solo blocks — only real meetings
+
+    const startsAt = eventDate(e.start ?? undefined);
+    const endsAt = eventDate(e.end ?? undefined);
+    if (!e.id || !startsAt || !endsAt) continue;
+
+    events.push({
+      googleEventId: e.id,
+      name: e.summary?.trim() || "(no title)",
+      startsAt,
+      endsAt,
+      isAllDay: !e.start?.dateTime, // all-day events carry `date`, not `dateTime`
+      location: e.location?.trim() || null,
+      attendeeCount,
+    });
+  }
+
+  events.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  return events;
+}
+
 // Fetch, then drop non-meetings / OOO and anything with fewer than 2 attendees.
 export async function fetchMeetingEvents(
   auth: Auth.OAuth2Client,
