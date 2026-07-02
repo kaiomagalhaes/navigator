@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, desc, eq } from "drizzle-orm";
+import { asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./index";
 import { calendarEvents, eventParticipants, googleAccounts, persons, todos } from "./schema";
 
@@ -56,6 +56,31 @@ export async function getEvent(id: string) {
         orderBy: [asc(todos.createdAt)],
       },
     },
+  });
+}
+
+// To-dos assigned to any of the given people (matched by email), each with the
+// meeting it came from so the page can group and link back. Emails are matched
+// case-insensitively; a person with no email match is ignored. Newest meeting
+// first, then oldest-first within a meeting to preserve the order they were
+// discussed. Returns an empty array when none of the emails map to a person.
+export async function listTodosForEmails(emails: string[]) {
+  const normalized = emails.map((e) => e.toLowerCase());
+  const people = await db.query.persons.findMany({
+    columns: { id: true },
+    // persons.email is stored as entered; compare lowercased on both sides.
+    where: inArray(sql`lower(${persons.email})`, normalized),
+  });
+  const personIds = people.map((p) => p.id);
+  if (personIds.length === 0) return [];
+
+  return db.query.todos.findMany({
+    where: inArray(todos.personId, personIds),
+    with: {
+      person: true,
+      event: { with: { fathomRecording: { columns: { url: true } } } },
+    },
+    orderBy: [asc(todos.createdAt)],
   });
 }
 

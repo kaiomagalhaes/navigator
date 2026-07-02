@@ -38,6 +38,9 @@ export default function RootLayout({
               <Link href="/events" className="hover:text-zinc-900 dark:hover:text-zinc-100">
                 Events
               </Link>
+              <Link href="/todos" className="hover:text-zinc-900 dark:hover:text-zinc-100">
+                To Dos
+              </Link>
               <Link href="/people" className="hover:text-zinc-900 dark:hover:text-zinc-100">
                 People
               </Link>
