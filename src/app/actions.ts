@@ -9,9 +9,8 @@ import { getAuthedClient } from "@/lib/google";
 import { fetchMeetingEvents } from "@/lib/google-calendar";
 import { FathomApiError } from "@/lib/fathom";
 import {
-  fetchMeetingsInWindow,
   fetchTranscript,
-  pickBestMatch,
+  findMeetingForEvent,
   type FathomMeeting,
   type MatchableEvent,
 } from "@/lib/fathom-meetings";
@@ -20,10 +19,6 @@ import {
 // Calendar import (see importEvents) — there is no manual create/edit path.
 // `linked` is how many events were auto-matched to a Fathom recording.
 export type ImportState = { error?: string; imported?: number; people?: number; linked?: number };
-
-// Fathom's API has no title/event-id filter, so we scan a ±12h window around
-// the event start; the match is then made on scheduled time + title + attendees.
-const FATHOM_WINDOW_MS = 12 * 60 * 60 * 1000;
 
 // Persist a matched Fathom recording for an event, pulling its transcript.
 // Idempotent: re-linking upserts the row. Shared by the import auto-link and
@@ -195,29 +190,22 @@ export async function importEvents(
   return { imported: events.length, people: peopleSeen.size, linked };
 }
 
-// Match a batch of freshly-imported events to Fathom recordings and link them.
-// Fetches the Fathom meeting list once for the whole span (not per event) to
-// stay well under the 60 req/min limit, then upserts each confident match.
+// Match each freshly-imported event to its Fathom recording with one search
+// call per event, then upsert the confident matches. Best-effort per event: a
+// Fathom error on one event is logged and skipped so the rest still link.
+// Note: this makes one Fathom call per event (plus one per match for the
+// transcript), so a large import can approach Fathom's 60 req/min limit.
 async function linkImportedEvents(events: (MatchableEvent & { id: string })[]): Promise<number> {
-  if (events.length === 0) return 0;
-
   let linked = 0;
-  try {
-    const times = events.map((e) => e.startsAt.getTime());
-    const from = new Date(Math.min(...times) - FATHOM_WINDOW_MS);
-    const to = new Date(Math.max(...times) + FATHOM_WINDOW_MS);
-    const meetings = await fetchMeetingsInWindow(from, to);
-
-    for (const event of events) {
-      const match = pickBestMatch(event, meetings);
+  for (const event of events) {
+    try {
+      const match = await findMeetingForEvent(event);
       if (!match) continue;
       await linkFathomRecording(event.id, match);
       linked++;
+    } catch (err) {
+      console.error("[importEvents:fathom]", event.id, err);
     }
-  } catch (err) {
-    // Log and move on — the events are already imported, and any recordings
-    // linked before the failure are already committed.
-    console.error("[importEvents:fathom]", err);
   }
   return linked;
 }
@@ -263,10 +251,7 @@ export async function syncEventWithFathom(
 
   let match;
   try {
-    const from = new Date(event.startsAt.getTime() - FATHOM_WINDOW_MS);
-    const to = new Date(event.startsAt.getTime() + FATHOM_WINDOW_MS);
-    const meetings = await fetchMeetingsInWindow(from, to);
-    match = pickBestMatch(matchable, meetings);
+    match = await findMeetingForEvent(matchable);
     if (!match) {
       return { notFound: true };
     }

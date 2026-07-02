@@ -58,27 +58,25 @@ function normalizeMeeting(m: RawMeeting): FathomMeeting {
 
 // ---- API calls -------------------------------------------------------------
 
-// List every recording whose created_at falls in [from, to], following the
-// cursor-based pagination. The window is used to narrow candidates; the caller
-// matches on scheduled_start_time. Transcripts are NOT inlined here (fetched
-// separately for the winning match only).
-export async function fetchMeetingsInWindow(from: Date, to: Date): Promise<FathomMeeting[]> {
-  const meetings: FathomMeeting[] = [];
-  let cursor: string | undefined;
+// A recording's created_at trails its scheduled start (recording is saved once
+// the meeting ends and finishes processing). We scan from shortly before the
+// event start to a few hours after so a typical meeting's recording falls in
+// the window. The API can't filter by scheduled time, only created_at.
+const CREATED_BEFORE_START_MS = 60 * 60 * 1000; // 1h before
+const CREATED_AFTER_START_MS = 6 * 60 * 60 * 1000; // 6h after
 
-  do {
-    const params = new URLSearchParams({
-      created_after: from.toISOString(),
-      created_before: to.toISOString(),
-    });
-    if (cursor) params.set("cursor", cursor);
+// Find the Fathom recording for a single event with ONE search call: fetch the
+// recordings created around the event and return the best confident match (or
+// null). Transcripts are fetched separately, only for the winning match.
+export async function findMeetingForEvent(event: MatchableEvent): Promise<FathomMeeting | null> {
+  const params = new URLSearchParams({
+    created_after: new Date(event.startsAt.getTime() - CREATED_BEFORE_START_MS).toISOString(),
+    created_before: new Date(event.startsAt.getTime() + CREATED_AFTER_START_MS).toISOString(),
+  });
 
-    const data = await fathomFetch<MeetingsResponse>(`/meetings?${params.toString()}`);
-    meetings.push(...(data.items ?? []).map(normalizeMeeting));
-    cursor = data.next_cursor ?? undefined;
-  } while (cursor);
-
-  return meetings;
+  const data = await fathomFetch<MeetingsResponse>(`/meetings?${params.toString()}`);
+  const meetings = (data.items ?? []).map(normalizeMeeting);
+  return pickBestMatch(event, meetings);
 }
 
 export async function fetchTranscript(recordingId: string): Promise<FathomTranscriptEntry[]> {
