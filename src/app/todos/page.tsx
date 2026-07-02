@@ -3,7 +3,7 @@ import { listTodosForEmails } from "@/db/queries";
 import { formatDate } from "@/lib/format";
 import { listTasksDueTodayOrOverdue, type TodoistTask } from "@/lib/todoist";
 import { TodoistTaskItem } from "@/components/todoist-task";
-import { MeetingTodo } from "@/components/meeting-todo";
+import { MeetingReviewGroup } from "@/components/meeting-review-group";
 
 // The emails that count as "me". To-dos assigned to a person with one of these
 // addresses show up on this page, wherever meeting they came from.
@@ -35,11 +35,13 @@ export default async function TodosPage() {
 
   // Group meeting to-dos by the meeting they came from, newest meeting first,
   // preserving the in-meeting order (the query already sorts by createdAt).
+  // Meetings marked reviewed are dropped so they no longer show here.
   const byEvent = new Map<
     string,
     { id: string; name: string; startsAt: Date; items: typeof todos }
   >();
   for (const todo of todos) {
+    if (todo.event.todosReviewedAt) continue;
     const group = byEvent.get(todo.event.id) ?? {
       id: todo.event.id,
       name: todo.event.name,
@@ -77,33 +79,17 @@ export default async function TodosPage() {
         ) : (
           <ul className="flex flex-col gap-4">
             {groups.map((group) => (
-              <li
+              <MeetingReviewGroup
                 key={group.id}
-                className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <div className="flex items-baseline justify-between gap-4">
-                  <Link
-                    href={`/events/${group.id}`}
-                    className="font-medium hover:underline"
-                  >
-                    {group.name}
-                  </Link>
-                  <span className="shrink-0 text-xs text-zinc-500">
-                    {formatDate(group.startsAt)}
-                  </span>
-                </div>
-                <ul className="mt-3 flex flex-col gap-2">
-                  {group.items.map((todo) => (
-                    <MeetingTodo
-                      key={todo.id}
-                      todoId={todo.id}
-                      text={todo.text}
-                      tsIndex={null}
-                      copied={Boolean(todo.todoistTaskId)}
-                    />
-                  ))}
-                </ul>
-              </li>
+                eventId={group.id}
+                eventName={group.name}
+                date={formatDate(group.startsAt)}
+                items={group.items.map((todo) => ({
+                  id: todo.id,
+                  text: todo.text,
+                  copied: Boolean(todo.todoistTaskId),
+                }))}
+              />
             ))}
           </ul>
         )}

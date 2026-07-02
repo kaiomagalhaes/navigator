@@ -247,6 +247,26 @@ export async function copyMeetingTodoToTodoist(
   }
 }
 
+// Mark a meeting's to-dos as reviewed, hiding it from the To Dos page's "From
+// your meetings" list. Pass reviewed=false to bring it back.
+export async function setMeetingReviewed(
+  eventId: string,
+  reviewed: boolean
+): Promise<{ error?: string }> {
+  if (!eventId) return { error: "Missing meeting." };
+  try {
+    await db
+      .update(calendarEvents)
+      .set({ todosReviewedAt: reviewed ? new Date() : null })
+      .where(eq(calendarEvents.id, eventId));
+    revalidatePath("/todos");
+    return {};
+  } catch (err) {
+    console.error("[setMeetingReviewed]", err);
+    return { error: "Could not update the meeting. Please try again." };
+  }
+}
+
 export async function disconnectAccount(formData: FormData): Promise<void> {
   const accountId = String(formData.get("accountId") ?? "");
   if (!accountId) return;

@@ -43,6 +43,13 @@
       "when": 1783024276061,
       "tag": "0005_grey_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783024999841,
+      "tag": "0006_moaning_lester",
+      "breakpoints": true
     }
   ]
 }
