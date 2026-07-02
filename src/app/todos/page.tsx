@@ -2,6 +2,8 @@ import Link from "next/link";
 import { listTodosForEmails } from "@/db/queries";
 import { formatDate } from "@/lib/format";
 import { listTasksDueTodayOrOverdue, type TodoistTask } from "@/lib/todoist";
+import { MarkdownText } from "@/components/markdown-text";
+import { TodoistTaskItem } from "@/components/todoist-task";
 
 // The emails that count as "me". To-dos assigned to a person with one of these
 // addresses show up on this page, wherever meeting they came from.
@@ -96,7 +98,9 @@ export default async function TodosPage() {
                       <span className="text-zinc-400" aria-hidden>
                         ☐
                       </span>
-                      <span>{todo.text}</span>
+                      <span>
+                        <MarkdownText>{todo.text}</MarkdownText>
+                      </span>
                     </li>
                   ))}
                 </ul>
@@ -107,15 +111,6 @@ export default async function TodosPage() {
       </section>
     </div>
   );
-}
-
-// Todoist priority is 4 (urgent, "p1") … 1 (none). Give the top two a colored
-// flag so urgent items read at a glance; lower ones get a plain checkbox.
-function priorityFlag(priority: number): string {
-  if (priority >= 4) return "text-rose-500";
-  if (priority === 3) return "text-amber-500";
-  if (priority === 2) return "text-sky-500";
-  return "text-zinc-400";
 }
 
 function TodoistSection({ result }: { result: TodoistResult }) {
@@ -159,32 +154,7 @@ function TodoistSection({ result }: { result: TodoistResult }) {
         ) : (
           <ul className="flex flex-col gap-2">
             {result.tasks.map((task) => (
-              <li
-                key={task.id}
-                className="flex items-start gap-3 rounded-xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <span className={`mt-0.5 ${priorityFlag(task.priority)}`} aria-hidden>
-                  ☐
-                </span>
-                <div className="min-w-0 flex-1">
-                  <a
-                    href={task.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm hover:underline"
-                  >
-                    {task.content}
-                  </a>
-                  {task.dueDate && task.dueDate < today && (
-                    <span className="ml-2 rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
-                      Overdue · {task.due}
-                    </span>
-                  )}
-                  {task.isRecurring && task.due && !(task.dueDate && task.dueDate < today) && (
-                    <span className="ml-2 text-xs text-zinc-500">↻ {task.due}</span>
-                  )}
-                </div>
-              </li>
+              <TodoistTaskItem key={task.id} task={task} today={today} />
             ))}
           </ul>
         ))}

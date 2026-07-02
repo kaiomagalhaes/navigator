@@ -9,6 +9,7 @@ import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
 import { regenerateEventTodos } from "@/lib/todos";
+import { completeTask, TodoistApiError } from "@/lib/todoist";
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.
@@ -180,6 +181,39 @@ export async function extractEventTodos(
   } catch (err) {
     console.error("[extractEventTodos]", err);
     return { error: describeOpenAiError(err) };
+  }
+}
+
+// ---- Todoist -------------------------------------------------------------
+
+export type CompleteTaskState = { error?: string };
+
+function describeTodoistError(err: unknown): string {
+  if (err instanceof TodoistApiError) {
+    if (err.status === 401 || err.status === 403) {
+      return "Todoist rejected the API token. Check TODOIST_API_TOKEN in your environment.";
+    }
+    if (err.status === 404) {
+      return "That task no longer exists in Todoist.";
+    }
+  }
+  if (err instanceof Error && err.message.includes("TODOIST_API_TOKEN")) {
+    return "Todoist is not configured. Set TODOIST_API_TOKEN in your environment.";
+  }
+  return "Could not reach Todoist. Please try again in a moment.";
+}
+
+// Mark a Todoist task done from the To Dos page. Completing it in Todoist means
+// it drops out of the "today | overdue" filter, so revalidating removes it here.
+export async function completeTodoistTask(taskId: string): Promise<CompleteTaskState> {
+  if (!taskId) return { error: "Missing task." };
+  try {
+    await completeTask(taskId);
+    revalidatePath("/todos");
+    return {};
+  } catch (err) {
+    console.error("[completeTodoistTask]", err);
+    return { error: describeTodoistError(err) };
   }
 }
 

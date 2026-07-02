@@ -54,12 +54,13 @@ function normalize(t: RawTask): TodoistTask {
   };
 }
 
-async function todoistFetch<T>(path: string): Promise<T> {
+async function todoistFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = process.env.TODOIST_API_TOKEN;
   if (!token) throw new Error("TODOIST_API_TOKEN is not set. See .env.example.");
 
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/json", ...init?.headers },
     // Personal tasks change constantly and are read per-request; never cache.
     cache: "no-store",
   });
@@ -72,7 +73,9 @@ async function todoistFetch<T>(path: string): Promise<T> {
     );
   }
 
-  return res.json() as Promise<T>;
+  // Mutating endpoints (e.g. /close) reply 204 with an empty body.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 // Every task due today or overdue, via the "today | overdue" smart filter.
@@ -113,4 +116,11 @@ export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
     if (da !== db) return da < db ? -1 : 1;
     return b.priority - a.priority;
   });
+}
+
+// Complete (close) a task in Todoist. For a recurring task this advances it to
+// its next occurrence rather than deleting it — matching Todoist's own behavior.
+// Replies 204 with no body; a non-2xx throws a TodoistApiError.
+export async function completeTask(id: string): Promise<void> {
+  await todoistFetch<void>(`/tasks/${encodeURIComponent(id)}/close`, { method: "POST" });
 }
