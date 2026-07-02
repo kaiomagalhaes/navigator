@@ -227,13 +227,19 @@ export async function copyMeetingTodoToTodoist(
   if (!todoId) return { error: "Missing to-do." };
   if (due !== "today" && due !== "tomorrow") return { error: "Invalid due date." };
 
-  const todo = await db.query.todos.findFirst({ where: eq(todos.id, todoId) });
+  const todo = await db.query.todos.findFirst({
+    where: eq(todos.id, todoId),
+    with: { event: { columns: { name: true } } },
+  });
   if (!todo) return { error: "That to-do no longer exists." };
   if (todo.todoistTaskId) return {}; // already copied — nothing to do
 
+  // Prefix with the meeting name for context, e.g. "Bill <> Codelitt - <task>".
+  const content = `${todo.event.name} - ${todo.text}`;
+
   try {
     const task = await createTask({
-      content: todo.text,
+      content,
       dueString: due,
       projectId: primaryProjectId(),
     });
