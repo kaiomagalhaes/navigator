@@ -5,6 +5,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
 import { ExtractTodosForm } from "@/components/extract-todos-form";
 import { TranscriptViewer } from "@/components/transcript-viewer";
+import { MeetingTodo } from "@/components/meeting-todo";
 import { isMe } from "@/lib/me";
 import type { FathomTranscriptEntry } from "@/lib/fathom-meetings";
 
@@ -162,27 +163,15 @@ export default async function EventDetailPage({
                   <span className="text-sm text-zinc-500">{group.email}</span>
                 </div>
                 <ul className="mt-3 flex flex-col gap-2">
-                  {group.items.map((todo) => {
-                    const idx = resolveTsIndex(todo.transcriptTimestamp);
-                    return (
-                      <li key={todo.id} className="flex gap-2 text-sm">
-                        <span className="text-zinc-400" aria-hidden>
-                          ☐
-                        </span>
-                        {idx !== null ? (
-                          <a
-                            href={`#ts-${idx}`}
-                            title="Jump to this moment in the transcript"
-                            className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                          >
-                            {todo.text}
-                          </a>
-                        ) : (
-                          <span>{todo.text}</span>
-                        )}
-                      </li>
-                    );
-                  })}
+                  {group.items.map((todo) => (
+                    <MeetingTodo
+                      key={todo.id}
+                      todoId={todo.id}
+                      text={todo.text}
+                      tsIndex={resolveTsIndex(todo.transcriptTimestamp)}
+                      copied={Boolean(todo.todoistTaskId)}
+                    />
+                  ))}
                 </ul>
               </div>
             ))}
@@ -191,32 +180,16 @@ export default async function EventDetailPage({
               <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-950">
                 <p className="text-sm font-medium text-zinc-500">Unassigned</p>
                 <ul className="mt-3 flex flex-col gap-2">
-                  {unassignedTodos.map((todo) => {
-                    const idx = resolveTsIndex(todo.transcriptTimestamp);
-                    return (
-                      <li key={todo.id} className="flex gap-2 text-sm">
-                        <span className="text-zinc-400" aria-hidden>
-                          ☐
-                        </span>
-                        <span>
-                          {idx !== null ? (
-                            <a
-                              href={`#ts-${idx}`}
-                              title="Jump to this moment in the transcript"
-                              className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-                            >
-                              {todo.text}
-                            </a>
-                          ) : (
-                            todo.text
-                          )}
-                          {todo.assigneeName && (
-                            <span className="text-zinc-500"> — {todo.assigneeName}</span>
-                          )}
-                        </span>
-                      </li>
-                    );
-                  })}
+                  {unassignedTodos.map((todo) => (
+                    <MeetingTodo
+                      key={todo.id}
+                      todoId={todo.id}
+                      text={todo.text}
+                      tsIndex={resolveTsIndex(todo.transcriptTimestamp)}
+                      assigneeName={todo.assigneeName}
+                      copied={Boolean(todo.todoistTaskId)}
+                    />
+                  ))}
                 </ul>
               </div>
             )}

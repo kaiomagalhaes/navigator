@@ -3,13 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { calendarEvents, googleAccounts } from "@/db/schema";
+import { calendarEvents, googleAccounts, todos } from "@/db/schema";
 import { getEvent } from "@/db/queries";
 import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
 import { regenerateEventTodos } from "@/lib/todos";
-import { completeTask, TodoistApiError } from "@/lib/todoist";
+import { completeTask, createTask, primaryProjectId, TodoistApiError } from "@/lib/todoist";
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.
@@ -213,6 +213,36 @@ export async function completeTodoistTask(taskId: string): Promise<CompleteTaskS
     return {};
   } catch (err) {
     console.error("[completeTodoistTask]", err);
+    return { error: describeTodoistError(err) };
+  }
+}
+
+// Copy a meeting to-do into Todoist, due today or tomorrow, then remember the
+// created task id so the event page can show the to-do crossed off. No-ops if
+// the to-do was already copied.
+export async function copyMeetingTodoToTodoist(
+  todoId: string,
+  due: "today" | "tomorrow"
+): Promise<CompleteTaskState> {
+  if (!todoId) return { error: "Missing to-do." };
+  if (due !== "today" && due !== "tomorrow") return { error: "Invalid due date." };
+
+  const todo = await db.query.todos.findFirst({ where: eq(todos.id, todoId) });
+  if (!todo) return { error: "That to-do no longer exists." };
+  if (todo.todoistTaskId) return {}; // already copied — nothing to do
+
+  try {
+    const task = await createTask({
+      content: todo.text,
+      dueString: due,
+      projectId: primaryProjectId(),
+    });
+    await db.update(todos).set({ todoistTaskId: task.id }).where(eq(todos.id, todoId));
+    revalidatePath(`/events/${todo.eventId}`);
+    revalidatePath("/todos");
+    return {};
+  } catch (err) {
+    console.error("[copyMeetingTodoToTodoist]", err);
     return { error: describeTodoistError(err) };
   }
 }

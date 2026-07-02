@@ -2,8 +2,8 @@ import Link from "next/link";
 import { listTodosForEmails } from "@/db/queries";
 import { formatDate } from "@/lib/format";
 import { listTasksDueTodayOrOverdue, type TodoistTask } from "@/lib/todoist";
-import { MarkdownText } from "@/components/markdown-text";
 import { TodoistTaskItem } from "@/components/todoist-task";
+import { MeetingTodo } from "@/components/meeting-todo";
 
 // The emails that count as "me". To-dos assigned to a person with one of these
 // addresses show up on this page, wherever meeting they came from.
@@ -94,14 +94,13 @@ export default async function TodosPage() {
                 </div>
                 <ul className="mt-3 flex flex-col gap-2">
                   {group.items.map((todo) => (
-                    <li key={todo.id} className="flex gap-2 text-sm">
-                      <span className="text-zinc-400" aria-hidden>
-                        ☐
-                      </span>
-                      <span>
-                        <MarkdownText>{todo.text}</MarkdownText>
-                      </span>
-                    </li>
+                    <MeetingTodo
+                      key={todo.id}
+                      todoId={todo.id}
+                      text={todo.text}
+                      tsIndex={null}
+                      copied={Boolean(todo.todoistTaskId)}
+                    />
                   ))}
                 </ul>
               </li>

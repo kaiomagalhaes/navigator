@@ -124,3 +124,32 @@ export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
 export async function completeTask(id: string): Promise<void> {
   await todoistFetch<void>(`/tasks/${encodeURIComponent(id)}/close`, { method: "POST" });
 }
+
+// The project new tasks are created in — the first of TODOIST_PROJECT_IDS, so
+// copied to-dos land in the same project the page reads from. Undefined (→ the
+// Todoist Inbox) when no project is configured.
+export function primaryProjectId(): string | undefined {
+  return (process.env.TODOIST_PROJECT_IDS || "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)[0];
+}
+
+// Create a task in Todoist. `dueString` accepts Todoist's natural-language due
+// syntax ("today", "tomorrow", …). Returns the created task, normalized.
+export async function createTask(input: {
+  content: string;
+  dueString?: string;
+  projectId?: string;
+}): Promise<TodoistTask> {
+  const body: Record<string, unknown> = { content: input.content };
+  if (input.dueString) body.due_string = input.dueString;
+  if (input.projectId) body.project_id = input.projectId;
+
+  const raw = await todoistFetch<RawTask>("/tasks", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return normalize(raw);
+}

@@ -91,6 +91,9 @@ export const todos = pgTable("todos", {
   // where this action item was discussed, so a to-do can deep-link to that
   // moment. Null when the model couldn't tie it to a specific line.
   transcriptTimestamp: text("transcript_timestamp"),
+  // Set to the Todoist task id once this action item has been copied into
+  // Todoist. Presence marks it as "sent" — the event page shows it crossed off.
+  todoistTaskId: text("todoist_task_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
