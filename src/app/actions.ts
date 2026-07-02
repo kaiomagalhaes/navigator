@@ -3,55 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { calendarEvents, fathomRecordings, googleAccounts } from "@/db/schema";
+import { calendarEvents, googleAccounts } from "@/db/schema";
 import { getEvent } from "@/db/queries";
-import { getAuthedClient } from "@/lib/google";
-import { fetchMeetingEvents } from "@/lib/google-calendar";
-import { persistEvents } from "@/lib/events-store";
 import { FathomApiError } from "@/lib/fathom";
-import {
-  fetchTranscript,
-  findMeetingForEvent,
-  type FathomMeeting,
-  type MatchableEvent,
-} from "@/lib/fathom-meetings";
+import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
+import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.
 // `linked` is how many events were auto-matched to a Fathom recording.
 export type ImportState = { error?: string; imported?: number; people?: number; linked?: number };
-
-// Persist a matched Fathom recording for an event, pulling its transcript.
-// Idempotent: re-linking upserts the row. Shared by the import auto-link and
-// the manual "Sync with Fathom" action.
-async function linkFathomRecording(eventId: string, match: FathomMeeting): Promise<void> {
-  const transcript = await fetchTranscript(match.recordingId);
-  await db
-    .insert(fathomRecordings)
-    .values({
-      eventId,
-      recordingId: match.recordingId,
-      title: match.title,
-      url: match.url,
-      shareUrl: match.shareUrl,
-      summary: match.summary,
-      transcript,
-      scheduledStartTime: match.scheduledStartTime,
-    })
-    .onConflictDoUpdate({
-      target: fathomRecordings.eventId,
-      set: {
-        recordingId: match.recordingId,
-        title: match.title,
-        url: match.url,
-        shareUrl: match.shareUrl,
-        summary: match.summary,
-        transcript,
-        scheduledStartTime: match.scheduledStartTime,
-        syncedAt: new Date(),
-      },
-    });
-}
 
 // Turn a raw Google/Gaxios error into an actionable message. The failure mode
 // matters: a disabled API is a Cloud-project config fix, not a reconnect.
@@ -108,57 +69,16 @@ export async function importEvents(
   });
   if (!account) return { error: "That calendar is no longer connected." };
 
-  let events;
   try {
-    const auth = await getAuthedClient(account);
-    events = await fetchMeetingEvents(auth, from, to);
+    const summary = await importCalendarRange(account, from, to);
+    revalidatePath("/events");
+    revalidatePath("/people");
+    revalidatePath("/calendars");
+    return summary;
   } catch (err) {
     console.error("[importEvents]", err);
     return { error: describeGoogleError(err) };
   }
-
-  const stored = await persistEvents(account.id, events);
-
-  const peopleSeen = new Set(stored.flatMap((e) => e.attendees.map((a) => a.email)));
-  // Collected for the Fathom auto-link pass after the events are committed.
-  const savedEvents: (MatchableEvent & { id: string })[] = stored.map((event) => ({
-    id: event.id,
-    name: event.name,
-    startsAt: event.startsAt,
-    emails: [
-      ...event.attendees.map((a) => a.email.toLowerCase()),
-      ...(event.organizerEmail ? [event.organizerEmail.toLowerCase()] : []),
-    ],
-  }));
-
-  // Auto-link each imported event to its Fathom recording. Best-effort: a
-  // Fathom outage or rate limit must not fail the calendar import itself.
-  const linked = await linkImportedEvents(savedEvents);
-
-  revalidatePath("/events");
-  revalidatePath("/people");
-  revalidatePath("/calendars");
-  return { imported: events.length, people: peopleSeen.size, linked };
-}
-
-// Match each freshly-imported event to its Fathom recording with one search
-// call per event, then upsert the confident matches. Best-effort per event: a
-// Fathom error on one event is logged and skipped so the rest still link.
-// Note: this makes one Fathom call per event (plus one per match for the
-// transcript), so a large import can approach Fathom's 60 req/min limit.
-async function linkImportedEvents(events: (MatchableEvent & { id: string })[]): Promise<number> {
-  let linked = 0;
-  for (const event of events) {
-    try {
-      const match = await findMeetingForEvent(event);
-      if (!match) continue;
-      await linkFathomRecording(event.id, match);
-      linked++;
-    } catch (err) {
-      console.error("[importEvents:fathom]", event.id, err);
-    }
-  }
-  return linked;
 }
 
 // ---- Fathom sync -----------------------------------------------------------
