@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEvent } from "@/db/queries";
-import { formatDateTime } from "@/lib/format";
+import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
+import { isMe } from "@/lib/me";
 import type { FathomTranscriptEntry } from "@/lib/fathom-meetings";
 
 export default async function EventDetailPage({
@@ -17,8 +18,15 @@ export default async function EventDetailPage({
     notFound();
   }
 
-  const participants = [...event.participants].sort((a, b) =>
-    a.person.name.localeCompare(b.person.name)
+  // Hide yourself — the list should read as "who else was in this meeting".
+  const participants = event.participants
+    .filter(({ person }) => !isMe(person.email))
+    .sort((a, b) => a.person.name.localeCompare(b.person.name));
+
+  // For each attendee, the last few meetings we've had with them (this event
+  // excluded), so you can jump straight into the recent history / transcripts.
+  const recentByPerson = await Promise.all(
+    participants.map(({ person }) => listRecentMeetingsWithPerson(person.id, event.id))
   );
 
   const recording = event.fathomRecording;
@@ -91,24 +99,70 @@ export default async function EventDetailPage({
 
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-medium">
-          Participants ({participants.length})
+          Attendees ({participants.length})
         </h2>
 
         {participants.length === 0 ? (
-          <p className="text-sm text-zinc-500">No participants on this event.</p>
+          <p className="text-sm text-zinc-500">No attendees on this event.</p>
         ) : (
-          <ul className="flex flex-col gap-2">
-            {participants.map(({ person }) => (
-              <li
-                key={person.id}
-                className="rounded-lg border border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-950"
-              >
-                <Link href={`/people/${person.id}`} className="hover:underline">
-                  <span className="font-medium">{person.name}</span>
-                  <span className="ml-2 text-sm text-zinc-500">{person.email}</span>
-                </Link>
-              </li>
-            ))}
+          <ul className="flex flex-col gap-3">
+            {participants.map(({ person }, i) => {
+              const recent = recentByPerson[i];
+              return (
+                <li
+                  key={person.id}
+                  className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+                >
+                  <Link
+                    href={`/people/${person.id}`}
+                    className="inline-flex items-baseline gap-2 hover:underline"
+                  >
+                    <span className="font-medium">{person.name}</span>
+                    <span className="text-sm text-zinc-500">{person.email}</span>
+                  </Link>
+
+                  <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800/60">
+                    <p className="text-xs uppercase tracking-wide text-zinc-500">
+                      {recent.length > 0
+                        ? `Last ${recent.length} meeting${recent.length === 1 ? "" : "s"} together`
+                        : "Recent meetings together"}
+                    </p>
+                    {recent.length === 0 ? (
+                      <p className="mt-2 text-sm text-zinc-500">
+                        No earlier meetings with them yet.
+                      </p>
+                    ) : (
+                      <ul className="mt-2 flex flex-col gap-1.5">
+                        {recent.map((meeting) => (
+                          <li key={meeting.id}>
+                            <Link
+                              href={`/events/${meeting.id}`}
+                              className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                            >
+                              <span className="flex items-center gap-2 truncate">
+                                <span className="truncate font-medium">{meeting.name}</span>
+                                {meeting.fathomRecording && (
+                                  <span
+                                    className="shrink-0 text-green-600 dark:text-green-400"
+                                    title="Has a Fathom transcript"
+                                    aria-label="Has a Fathom transcript"
+                                  >
+                                    ●
+                                  </span>
+                                )}
+                              </span>
+                              <span className="shrink-0 text-xs text-zinc-500">
+                                {formatDate(meeting.startsAt)}
+                              </span>
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

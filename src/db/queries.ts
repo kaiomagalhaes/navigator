@@ -1,7 +1,7 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "./index";
-import { calendarEvents, googleAccounts, persons } from "./schema";
+import { calendarEvents, eventParticipants, googleAccounts, persons } from "./schema";
 
 // Connected Google accounts, without exposing stored tokens to callers/UI.
 export async function listGoogleAccounts() {
@@ -20,6 +20,27 @@ export async function listEvents() {
       fathomRecording: true,
     },
   });
+}
+
+// The most recent past meetings a given person took part in, newest first,
+// excluding one event (the one you're currently viewing). Used on the event
+// page to show "the last few times we met with each attendee".
+export async function listRecentMeetingsWithPerson(
+  personId: string,
+  excludeEventId: string,
+  limit = 3
+) {
+  const rows = await db.query.eventParticipants.findMany({
+    where: eq(eventParticipants.personId, personId),
+    with: { event: { with: { fathomRecording: true } } },
+  });
+
+  const now = new Date();
+  return rows
+    .map((row) => row.event)
+    .filter((event) => event.id !== excludeEventId && event.startsAt < now)
+    .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
+    .slice(0, limit);
 }
 
 export async function getEvent(id: string) {

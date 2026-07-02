@@ -51,9 +51,9 @@ async function listAllEvents(
   return events;
 }
 
-// A single item on the day's agenda. Unlike NormalizedEvent (used by the
-// import, which keeps only past multi-person meetings), this is everything on
-// the calendar for the day — solo blocks and upcoming events included.
+// A single item on the day's agenda. Carries the same attendee/organizer fields
+// as NormalizedEvent (so it can be persisted the same way) plus a couple of
+// display extras. Unlike fetchMeetingEvents, this keeps upcoming events too.
 export type DayEvent = {
   googleEventId: string;
   name: string;
@@ -61,7 +61,8 @@ export type DayEvent = {
   endsAt: Date;
   isAllDay: boolean;
   location: string | null;
-  attendeeCount: number;
+  organizerEmail: string | null;
+  attendees: NormalizedAttendee[];
 };
 
 // Real meetings on the calendar between [from, to], sorted by start time. Like
@@ -79,8 +80,14 @@ export async function fetchDayEvents(
   for (const e of raw) {
     if (NON_MEETING_TYPES.has(e.eventType ?? "default")) continue;
 
-    const attendeeCount = (e.attendees ?? []).filter((a) => a.email && !a.resource).length;
-    if (attendeeCount < 2) continue; // skip solo blocks — only real meetings
+    const attendees = (e.attendees ?? [])
+      .filter((a) => a.email && !a.resource) // skip room/resource entries
+      .map((a) => ({
+        name: (a.displayName ?? a.email!.split("@")[0]).trim(),
+        email: a.email!.toLowerCase(),
+        responseStatus: a.responseStatus ?? "needsAction",
+      }));
+    if (attendees.length < 2) continue; // skip solo blocks — only real meetings
 
     const startsAt = eventDate(e.start ?? undefined);
     const endsAt = eventDate(e.end ?? undefined);
@@ -93,7 +100,8 @@ export async function fetchDayEvents(
       endsAt,
       isAllDay: !e.start?.dateTime, // all-day events carry `date`, not `dateTime`
       location: e.location?.trim() || null,
-      attendeeCount,
+      organizerEmail: e.organizer?.email ? e.organizer.email.toLowerCase() : null,
+      attendees,
     });
   }
 

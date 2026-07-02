@@ -3,10 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { calendarEvents, eventParticipants, fathomRecordings, googleAccounts, persons } from "@/db/schema";
+import { calendarEvents, fathomRecordings, googleAccounts } from "@/db/schema";
 import { getEvent } from "@/db/queries";
 import { getAuthedClient } from "@/lib/google";
 import { fetchMeetingEvents } from "@/lib/google-calendar";
+import { persistEvents } from "@/lib/events-store";
 import { FathomApiError } from "@/lib/fathom";
 import {
   fetchTranscript,
@@ -116,69 +117,19 @@ export async function importEvents(
     return { error: describeGoogleError(err) };
   }
 
-  const peopleSeen = new Set<string>();
+  const stored = await persistEvents(account.id, events);
+
+  const peopleSeen = new Set(stored.flatMap((e) => e.attendees.map((a) => a.email)));
   // Collected for the Fathom auto-link pass after the events are committed.
-  const savedEvents: (MatchableEvent & { id: string })[] = [];
-
-  await db.transaction(async (tx) => {
-    for (const event of events) {
-      // Upsert attendees as persons (email is unique, lowercased).
-      const personIds: string[] = [];
-      for (const attendee of event.attendees) {
-        peopleSeen.add(attendee.email);
-        const [person] = await tx
-          .insert(persons)
-          .values({ name: attendee.name, email: attendee.email })
-          .onConflictDoUpdate({
-            target: persons.email,
-            set: { name: attendee.name },
-          })
-          .returning({ id: persons.id });
-        personIds.push(person.id);
-      }
-
-      // Upsert the event on (account_id, google_event_id).
-      const [saved] = await tx
-        .insert(calendarEvents)
-        .values({
-          name: event.name,
-          startsAt: event.startsAt,
-          endsAt: event.endsAt,
-          accountId: account.id,
-          googleEventId: event.googleEventId,
-          organizerEmail: event.organizerEmail,
-        })
-        .onConflictDoUpdate({
-          target: [calendarEvents.accountId, calendarEvents.googleEventId],
-          set: {
-            name: event.name,
-            startsAt: event.startsAt,
-            endsAt: event.endsAt,
-            organizerEmail: event.organizerEmail,
-          },
-        })
-        .returning({ id: calendarEvents.id });
-
-      // Reconcile participants: replace the set so removed attendees drop off.
-      await tx.delete(eventParticipants).where(eq(eventParticipants.eventId, saved.id));
-      if (personIds.length > 0) {
-        await tx
-          .insert(eventParticipants)
-          .values(personIds.map((personId) => ({ eventId: saved.id, personId })))
-          .onConflictDoNothing();
-      }
-
-      savedEvents.push({
-        id: saved.id,
-        name: event.name,
-        startsAt: event.startsAt,
-        emails: [
-          ...event.attendees.map((a) => a.email.toLowerCase()),
-          ...(event.organizerEmail ? [event.organizerEmail.toLowerCase()] : []),
-        ],
-      });
-    }
-  });
+  const savedEvents: (MatchableEvent & { id: string })[] = stored.map((event) => ({
+    id: event.id,
+    name: event.name,
+    startsAt: event.startsAt,
+    emails: [
+      ...event.attendees.map((a) => a.email.toLowerCase()),
+      ...(event.organizerEmail ? [event.organizerEmail.toLowerCase()] : []),
+    ],
+  }));
 
   // Auto-link each imported event to its Fathom recording. Best-effort: a
   // Fathom outage or rate limit must not fail the calendar import itself.

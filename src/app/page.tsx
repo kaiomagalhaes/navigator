@@ -2,19 +2,23 @@ import Link from "next/link";
 import { db } from "@/db";
 import { getAuthedClient } from "@/lib/google";
 import { fetchDayEvents, type DayEvent } from "@/lib/google-calendar";
+import { persistEvents } from "@/lib/events-store";
 import { formatTime, formatDay } from "@/lib/format";
 
 // This page reads live from Google Calendar on every request, so never cache it.
 export const dynamic = "force-dynamic";
 
+// A today event, once stored, carries the DB id we link to.
+type TodayEvent = DayEvent & { id: string };
+
 type TodayResult =
   | { status: "no-accounts" }
   | { status: "error" }
-  | { status: "ok"; events: DayEvent[] };
+  | { status: "ok"; events: TodayEvent[] };
 
-// Pull today's events straight from every connected Google Calendar. This is a
-// live glance at the day — it includes upcoming and solo events — and is kept
-// separate from the /events archive (which stores only past meetings).
+// Pull today's events from every connected Google Calendar and store them, so
+// each has a real event page to link to. The upsert is idempotent, so loading
+// the homepage repeatedly just keeps today's meetings in sync.
 async function getTodaysEvents(): Promise<TodayResult> {
   const accounts = await db.query.googleAccounts.findMany();
   if (accounts.length === 0) return { status: "no-accounts" };
@@ -28,7 +32,8 @@ async function getTodaysEvents(): Promise<TodayResult> {
     const perAccount = await Promise.all(
       accounts.map(async (account) => {
         const auth = await getAuthedClient(account);
-        return fetchDayEvents(auth, dayStart, dayEnd);
+        const events = await fetchDayEvents(auth, dayStart, dayEnd);
+        return persistEvents(account.id, events);
       })
     );
 
@@ -129,9 +134,10 @@ export default async function Home() {
             const isNext = event.googleEventId === nextUpId;
             const isNow = !event.isAllDay && event.startsAt <= now && event.endsAt > now;
             return (
-              <div
+              <Link
                 key={event.googleEventId}
-                className="relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-transform hover:-translate-y-0.5 dark:border-zinc-800 dark:bg-zinc-950"
+                href={`/events/${event.id}`}
+                className="relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
               >
                 <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`} aria-hidden />
                 <div className="pl-2 text-2xl" aria-hidden>
@@ -156,12 +162,10 @@ export default async function Home() {
                       ? "All day"
                       : `${formatTime(event.startsAt)} – ${formatTime(event.endsAt)}`}
                     {event.location ? ` · ${event.location}` : ""}
-                    {event.attendeeCount > 1
-                      ? ` · ${event.attendeeCount} people`
-                      : ""}
+                    {` · ${event.attendees.length} people`}
                   </p>
                 </div>
-              </div>
+              </Link>
             );
           })}
         </section>
