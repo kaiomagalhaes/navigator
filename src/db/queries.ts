@@ -1,7 +1,7 @@
 import "server-only";
 import { asc, desc, eq } from "drizzle-orm";
 import { db } from "./index";
-import { calendarEvents, eventParticipants, googleAccounts, persons } from "./schema";
+import { calendarEvents, eventParticipants, googleAccounts, persons, todos } from "./schema";
 
 // Connected Google accounts, without exposing stored tokens to callers/UI.
 export async function listGoogleAccounts() {
@@ -51,6 +51,10 @@ export async function getEvent(id: string) {
         with: { person: true },
       },
       fathomRecording: true,
+      todos: {
+        with: { person: true },
+        orderBy: [asc(todos.createdAt)],
+      },
     },
   });
 }

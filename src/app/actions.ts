@@ -8,6 +8,7 @@ import { getEvent } from "@/db/queries";
 import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
+import { regenerateEventTodos } from "@/lib/todos";
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.
@@ -134,6 +135,52 @@ export async function syncEventWithFathom(
 
   revalidatePath(`/events/${event.id}`);
   return { linkedTitle: match.title ?? "Fathom recording", url: match.shareUrl ?? match.url };
+}
+
+// ---- Extract to-dos --------------------------------------------------------
+
+export type ExtractTodosState = { error?: string; count?: number };
+
+function describeOpenAiError(err: unknown): string {
+  const e = err as { status?: number; message?: string };
+  if (e?.message?.includes("OPENAI_API_KEY")) {
+    return "OpenAI is not configured. Set OPENAI_API_KEY in your environment.";
+  }
+  if (e?.status === 401) {
+    return "OpenAI rejected the API key. Check OPENAI_API_KEY in your environment.";
+  }
+  if (e?.status === 429) {
+    return "OpenAI rate limit or quota reached. Please try again shortly.";
+  }
+  return "Could not extract to-dos. Please try again in a moment.";
+}
+
+// Extract action items from an event's transcript with OpenAI, tying each to a
+// participant where possible. Regenerates the set on every run (delete-then-
+// insert), so re-extracting replaces the previous to-dos rather than duplicating.
+export async function extractEventTodos(
+  _prev: ExtractTodosState,
+  formData: FormData
+): Promise<ExtractTodosState> {
+  const eventId = String(formData.get("eventId") ?? "");
+  if (!eventId) return { error: "Missing event." };
+
+  const event = await getEvent(eventId);
+  if (!event) return { error: "That event no longer exists." };
+
+  const transcript = event.fathomRecording?.transcript;
+  if (!Array.isArray(transcript) || transcript.length === 0) {
+    return { error: "This event has no transcript to extract to-dos from." };
+  }
+
+  try {
+    const count = await regenerateEventTodos(event);
+    revalidatePath(`/events/${event.id}`);
+    return { count };
+  } catch (err) {
+    console.error("[extractEventTodos]", err);
+    return { error: describeOpenAiError(err) };
+  }
 }
 
 export async function disconnectAccount(formData: FormData): Promise<void> {

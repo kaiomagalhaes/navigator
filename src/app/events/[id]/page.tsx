@@ -3,8 +3,17 @@ import { notFound } from "next/navigation";
 import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
+import { ExtractTodosForm } from "@/components/extract-todos-form";
+import { TranscriptViewer } from "@/components/transcript-viewer";
 import { isMe } from "@/lib/me";
 import type { FathomTranscriptEntry } from "@/lib/fathom-meetings";
+
+// "HH:MM:SS" / "MM:SS" / "SS" → total seconds, or null if unparseable.
+function timestampToSeconds(ts: string): number | null {
+  const parts = ts.split(":").map((p) => Number(p));
+  if (parts.some((n) => Number.isNaN(n))) return null;
+  return parts.reduce((acc, n) => acc * 60 + n, 0);
+}
 
 export default async function EventDetailPage({
   params,
@@ -31,6 +40,59 @@ export default async function EventDetailPage({
 
   const recording = event.fathomRecording;
   const transcript = (recording?.transcript ?? null) as FathomTranscriptEntry[] | null;
+  const hasTranscript = !!transcript && transcript.length > 0;
+
+  // Resolve a to-do's stored transcript timestamp to a transcript line index so
+  // the to-do can deep-link to "#ts-<index>". Prefer an exact timestamp match;
+  // otherwise fall back to the nearest line by elapsed seconds. Returns null
+  // when there's no transcript or no timestamp to anchor to.
+  const resolveTsIndex = (ts: string | null): number | null => {
+    if (!ts || !transcript) return null;
+    // Tolerate stray formatting (e.g. "[00:19:02]") from older data.
+    const clean = ts.replace(/[^\d:]/g, "");
+    if (!clean) return null;
+    const exact = transcript.findIndex((e) => e.timestamp.replace(/[^\d:]/g, "") === clean);
+    if (exact >= 0) return exact;
+    const target = timestampToSeconds(clean);
+    if (target === null) return null;
+    let best: number | null = null;
+    let bestDiff = Infinity;
+    transcript.forEach((e, i) => {
+      const s = timestampToSeconds(e.timestamp);
+      if (s !== null) {
+        const diff = Math.abs(s - target);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          best = i;
+        }
+      }
+    });
+    return best;
+  };
+
+  // Group extracted to-dos by the person responsible, with an "Unassigned"
+  // bucket for action items we couldn't tie to a known participant.
+  const todosByPerson = new Map<
+    string,
+    { name: string; email: string; items: typeof event.todos }
+  >();
+  const unassignedTodos: typeof event.todos = [];
+  for (const todo of event.todos) {
+    if (todo.person) {
+      const group = todosByPerson.get(todo.person.id) ?? {
+        name: todo.person.name,
+        email: todo.person.email,
+        items: [],
+      };
+      group.items.push(todo);
+      todosByPerson.set(todo.person.id, group);
+    } else {
+      unassignedTodos.push(todo);
+    }
+  }
+  const todoGroups = [...todosByPerson.values()].sort((a, b) =>
+    a.name.localeCompare(b.name)
+  );
 
   return (
     <div className="flex flex-col gap-8">
@@ -78,22 +140,87 @@ export default async function EventDetailPage({
             </div>
           )}
 
-          {transcript && transcript.length > 0 && (
-            <details className="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-950">
-              <summary className="cursor-pointer text-sm font-medium">
-                Transcript ({transcript.length} lines)
-              </summary>
-              <ul className="mt-4 flex flex-col gap-2">
-                {transcript.map((entry, i) => (
-                  <li key={i} className="text-sm">
-                    <span className="text-zinc-500">{entry.timestamp} </span>
-                    <span className="font-medium">{entry.speaker}:</span>{" "}
-                    <span>{entry.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+          {hasTranscript && (
+            <ExtractTodosForm eventId={event.id} hasTodos={event.todos.length > 0} />
           )}
+
+          {hasTranscript && <TranscriptViewer entries={transcript} />}
+        </section>
+      )}
+
+      {event.todos.length > 0 && (
+        <section className="flex flex-col gap-4">
+          <h2 className="text-lg font-medium">To-dos ({event.todos.length})</h2>
+          <div className="flex flex-col gap-4">
+            {todoGroups.map((group) => (
+              <div
+                key={group.email}
+                className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium">{group.name}</span>
+                  <span className="text-sm text-zinc-500">{group.email}</span>
+                </div>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {group.items.map((todo) => {
+                    const idx = resolveTsIndex(todo.transcriptTimestamp);
+                    return (
+                      <li key={todo.id} className="flex gap-2 text-sm">
+                        <span className="text-zinc-400" aria-hidden>
+                          ☐
+                        </span>
+                        {idx !== null ? (
+                          <a
+                            href={`#ts-${idx}`}
+                            title="Jump to this moment in the transcript"
+                            className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                          >
+                            {todo.text}
+                          </a>
+                        ) : (
+                          <span>{todo.text}</span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+
+            {unassignedTodos.length > 0 && (
+              <div className="rounded-xl border border-dashed border-zinc-300 bg-white p-4 dark:border-zinc-700 dark:bg-zinc-950">
+                <p className="text-sm font-medium text-zinc-500">Unassigned</p>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {unassignedTodos.map((todo) => {
+                    const idx = resolveTsIndex(todo.transcriptTimestamp);
+                    return (
+                      <li key={todo.id} className="flex gap-2 text-sm">
+                        <span className="text-zinc-400" aria-hidden>
+                          ☐
+                        </span>
+                        <span>
+                          {idx !== null ? (
+                            <a
+                              href={`#ts-${idx}`}
+                              title="Jump to this moment in the transcript"
+                              className="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                            >
+                              {todo.text}
+                            </a>
+                          ) : (
+                            todo.text
+                          )}
+                          {todo.assigneeName && (
+                            <span className="text-zinc-500"> — {todo.assigneeName}</span>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
         </section>
       )}
 

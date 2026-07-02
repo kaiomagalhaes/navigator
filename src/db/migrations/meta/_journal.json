@@ -22,6 +22,20 @@
       "when": 1782867592747,
       "tag": "0002_medical_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1783013743060,
+      "tag": "0003_faithful_invisible_woman",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1783015206079,
+      "tag": "0004_mysterious_green_goblin",
+      "breakpoints": true
     }
   ]
 }
