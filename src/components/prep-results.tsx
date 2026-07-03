@@ -1,5 +1,5 @@
 import Link from "next/link";
-import type { StoredPrep } from "@/app/actions";
+import type { StoredPrep } from "@/lib/prepare";
 import { formatDate } from "@/lib/format";
 
 type Coaching = NonNullable<StoredPrep["coaching"]>;

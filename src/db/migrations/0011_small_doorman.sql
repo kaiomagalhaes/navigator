@@ -1,0 +1,1 @@
+ALTER TABLE "calendar_events" ADD COLUMN "recurring_event_id" text;

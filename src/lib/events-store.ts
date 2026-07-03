@@ -17,6 +17,8 @@ export type PersistableEvent = {
   // where they default to false / null.
   isAllDay?: boolean;
   location?: string | null;
+  // Google's parent recurring-series id; null for one-off events.
+  recurringEventId?: string | null;
 };
 
 // Idempotently upsert events (and their attendees) for one account. Events are
@@ -54,6 +56,7 @@ export async function persistEvents<T extends PersistableEvent>(
           location: event.location ?? null,
           accountId,
           googleEventId: event.googleEventId,
+          recurringEventId: event.recurringEventId ?? null,
           organizerEmail: event.organizerEmail,
         })
         .onConflictDoUpdate({
@@ -64,6 +67,7 @@ export async function persistEvents<T extends PersistableEvent>(
             endsAt: event.endsAt,
             isAllDay: event.isAllDay ?? false,
             location: event.location ?? null,
+            recurringEventId: event.recurringEventId ?? null,
             organizerEmail: event.organizerEmail,
           },
         })

@@ -9,19 +9,12 @@ import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
 import { regenerateEventTodos } from "@/lib/todos";
-import {
-  generatePrep,
-  describeOpenAiError,
-  type PrepItem,
-  type PrepGroup,
-  type PrepareState,
-  type StoredPrep,
-} from "@/lib/prepare";
+import { generatePrep, describeOpenAiError, type PrepareState } from "@/lib/prepare";
 import { completeTask, createTask, primaryProjectId, TodoistApiError } from "@/lib/todoist";
-
-// The Prepare types live in @/lib/prepare (a plain module the API route can also
-// import); re-exported here so existing consumers keep importing from @/app/actions.
-export type { PrepItem, PrepGroup, PrepareState, StoredPrep };
+// Note: the Prepare types (PrepItem/PrepGroup/PrepareState/StoredPrep) are NOT
+// re-exported here. Re-exporting types from a "use server" module makes Next's
+// server-action compiler treat them as runtime action exports and blow up. All
+// consumers import those types straight from "@/lib/prepare" instead.
 
 // Events, people, and participants are sourced exclusively from the Google
 // Calendar import (see importEvents) — there is no manual create/edit path.

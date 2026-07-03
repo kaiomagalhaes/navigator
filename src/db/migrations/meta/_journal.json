@@ -78,6 +78,13 @@
       "when": 1783083173626,
       "tag": "0010_abnormal_triathlon",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1783086419832,
+      "tag": "0011_small_doorman",
+      "breakpoints": true
     }
   ]
 }

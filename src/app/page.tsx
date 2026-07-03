@@ -28,6 +28,8 @@ type AgendaEvent = {
   attendeeCount: number;
   // Whether this meeting has a saved Prepare briefing (calendar_events.prep).
   prepared: boolean;
+  // Whether this is an occurrence of a recurring Google series.
+  recurring: boolean;
 };
 
 type DayResult =
@@ -68,6 +70,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
           location: e.location,
           attendeeCount: e.participants.length,
           prepared: e.prep != null,
+          recurring: e.recurringEventId != null,
         }))
       ),
     };
@@ -94,6 +97,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       location: e.location,
       attendeeCount: e.attendees.length,
       prepared: false, // just pulled from Google; not prepared yet
+      recurring: e.recurringEventId != null,
     }));
 
     return { status: "ok", events: dedupe(events) };
@@ -269,6 +273,14 @@ export default async function Home({
                     {event.prepared && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                         <span aria-hidden>✓</span> Prepared
+                      </span>
+                    )}
+                    {event.recurring && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300"
+                        title="Recurring meeting"
+                      >
+                        <span aria-hidden>🔁</span> Recurring
                       </span>
                     )}
                   </div>

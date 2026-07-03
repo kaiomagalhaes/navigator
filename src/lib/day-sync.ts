@@ -20,6 +20,7 @@ function fingerprint(parts: {
   endsAt: Date;
   isAllDay: boolean;
   location: string | null;
+  recurringEventId: string | null;
   emails: string[];
 }): string {
   return [
@@ -30,6 +31,7 @@ function fingerprint(parts: {
     parts.endsAt.toISOString(),
     parts.isAllDay,
     parts.location ?? "",
+    parts.recurringEventId ?? "",
     [...parts.emails].map((e) => e.toLowerCase()).sort().join(","),
   ].join("|");
 }
@@ -94,6 +96,7 @@ export async function syncDay(
         endsAt: e.endsAt,
         isAllDay: e.isAllDay,
         location: e.location,
+        recurringEventId: e.recurringEventId,
         emails: e.participants.map((p) => p.person.email),
       })
     );
@@ -108,6 +111,7 @@ export async function syncDay(
         endsAt: e.endsAt,
         isAllDay: e.isAllDay,
         location: e.location,
+        recurringEventId: e.recurringEventId,
         emails: e.attendees.map((a) => a.email),
       })
     )

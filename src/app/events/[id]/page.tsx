@@ -5,7 +5,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
 import { MeetingPrep } from "@/components/meeting-prep";
 import { PrepResults } from "@/components/prep-results";
-import type { StoredPrep } from "@/app/actions";
+import type { StoredPrep } from "@/lib/prepare";
 import { ExtractTodosForm } from "@/components/extract-todos-form";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { MeetingTodo } from "@/components/meeting-todo";

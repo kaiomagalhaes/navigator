@@ -27,6 +27,10 @@ export const calendarEvents = pgTable(
     // Provenance for imported events. Manually created events leave these null.
     accountId: uuid("account_id").references(() => googleAccounts.id, { onDelete: "set null" }),
     googleEventId: text("google_event_id"),
+    // Google's parent recurring-series id (same across every instance of a
+    // series). Non-null ⇒ this event is a recurring occurrence. Used to mark
+    // recurring meetings and to scope prep to prior occurrences of the series.
+    recurringEventId: text("recurring_event_id"),
     organizerEmail: text("organizer_email"),
     // Set once you've reviewed this meeting's to-dos on the To Dos page. When
     // set, the meeting is hidden from that page's "From your meetings" list.

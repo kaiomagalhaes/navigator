@@ -44,10 +44,15 @@ export async function getDaySync(date: string) {
 // The most recent past meetings a given person took part in, newest first,
 // excluding one event (the one you're currently viewing). Used on the event
 // page to show "the last few times we met with each attendee".
+//
+// When `seriesId` is given (non-null), the results are restricted to occurrences
+// of that recurring series — so preparing a recurring meeting only pulls from
+// that meeting's prior occurrences, not every meeting with the person.
 export async function listRecentMeetingsWithPerson(
   personId: string,
   excludeEventId: string,
-  limit = 3
+  limit = 3,
+  seriesId?: string | null
 ) {
   const rows = await db.query.eventParticipants.findMany({
     where: eq(eventParticipants.personId, personId),
@@ -57,7 +62,12 @@ export async function listRecentMeetingsWithPerson(
   const now = new Date();
   return rows
     .map((row) => row.event)
-    .filter((event) => event.id !== excludeEventId && event.startsAt < now)
+    .filter(
+      (event) =>
+        event.id !== excludeEventId &&
+        event.startsAt < now &&
+        (seriesId == null || event.recurringEventId === seriesId)
+    )
     .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
     .slice(0, limit);
 }

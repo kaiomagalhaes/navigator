@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { prepareMeeting, type PrepareState } from "@/app/actions";
+import { prepareMeeting } from "@/app/actions";
+import type { PrepareState } from "@/lib/prepare";
 import { SubmitButton } from "./submit-button";
 
 const initialState: PrepareState = {};

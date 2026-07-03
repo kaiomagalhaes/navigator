@@ -16,6 +16,8 @@ export type NormalizedEvent = {
   startsAt: Date;
   endsAt: Date;
   organizerEmail: string | null;
+  // Google's parent recurring-series id; null for one-off events.
+  recurringEventId: string | null;
   attendees: NormalizedAttendee[];
 };
 
@@ -62,6 +64,8 @@ export type DayEvent = {
   isAllDay: boolean;
   location: string | null;
   organizerEmail: string | null;
+  // Google's parent recurring-series id; null for one-off events.
+  recurringEventId: string | null;
   attendees: NormalizedAttendee[];
 };
 
@@ -101,6 +105,7 @@ export async function fetchDayEvents(
       isAllDay: !e.start?.dateTime, // all-day events carry `date`, not `dateTime`
       location: e.location?.trim() || null,
       organizerEmail: e.organizer?.email ? e.organizer.email.toLowerCase() : null,
+      recurringEventId: e.recurringEventId ?? null,
       attendees,
     });
   }
@@ -145,6 +150,7 @@ export async function fetchMeetingEvents(
       startsAt,
       endsAt,
       organizerEmail: e.organizer?.email ? e.organizer.email.toLowerCase() : null,
+      recurringEventId: e.recurringEventId ?? null,
       attendees,
     });
   }
