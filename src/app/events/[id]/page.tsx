@@ -143,7 +143,7 @@ export default async function EventDetailPage({
           </Link>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{event.name}</h1>
         </div>
-        {!isUpcoming && <FathomSyncForm eventId={event.id} />}
+        {!isUpcoming && !event.fathomRecording && <FathomSyncForm eventId={event.id} />}
       </div>
 
       <dl className="grid gap-4 rounded-xl border border-zinc-200 bg-white p-6 sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-950">
@@ -177,7 +177,9 @@ export default async function EventDetailPage({
           <PrepResults data={event.prep as StoredPrep} />
         </section>
       ) : (
-        isUpcoming && <MeetingPrep eventId={event.id} />
+        // Offer prep for any meeting without a saved briefing — past calls
+        // included (useful to gather history + coaching after the fact).
+        <MeetingPrep eventId={event.id} />
       )}
 
       {recording && (
