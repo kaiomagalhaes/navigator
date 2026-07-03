@@ -94,7 +94,9 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
     return {
       status: "ok",
       events: dedupe(
-        stored.map((e) => ({
+        stored
+          .filter((e) => e.selfResponseStatus !== "declined")
+          .map((e) => ({
           id: e.id,
           googleEventId: e.googleEventId,
           name: e.name,
@@ -124,7 +126,10 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       })
     );
 
-    const events = perAccount.flat().map((e) => ({
+    const events = perAccount
+      .flat()
+      .filter((e) => e.selfResponseStatus !== "declined")
+      .map((e) => ({
       id: e.id,
       googleEventId: e.googleEventId,
       name: e.name,

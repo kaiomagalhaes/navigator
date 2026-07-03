@@ -32,6 +32,10 @@ export const calendarEvents = pgTable(
     // recurring meetings and to scope prep to prior occurrences of the series.
     recurringEventId: text("recurring_event_id"),
     organizerEmail: text("organizer_email"),
+    // The user's own RSVP as returned by Google ("accepted" / "declined" /
+    // "tentative" / "needsAction"), or null when not an attendee. Declined
+    // meetings are hidden from the day view.
+    selfResponseStatus: text("self_response_status"),
     // Set once you've reviewed this meeting's to-dos on the To Dos page. When
     // set, the meeting is hidden from that page's "From your meetings" list.
     todosReviewedAt: timestamp("todos_reviewed_at", { withTimezone: true }),

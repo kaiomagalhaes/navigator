@@ -19,6 +19,8 @@ export type PersistableEvent = {
   location?: string | null;
   // Google's parent recurring-series id; null for one-off events.
   recurringEventId?: string | null;
+  // The user's own RSVP; "declined" hides the meeting from the day view.
+  selfResponseStatus?: string | null;
 };
 
 // Idempotently upsert events (and their attendees) for one account. Events are
@@ -58,6 +60,7 @@ export async function persistEvents<T extends PersistableEvent>(
           googleEventId: event.googleEventId,
           recurringEventId: event.recurringEventId ?? null,
           organizerEmail: event.organizerEmail,
+          selfResponseStatus: event.selfResponseStatus ?? null,
         })
         .onConflictDoUpdate({
           target: [calendarEvents.accountId, calendarEvents.googleEventId],
@@ -69,6 +72,7 @@ export async function persistEvents<T extends PersistableEvent>(
             location: event.location ?? null,
             recurringEventId: event.recurringEventId ?? null,
             organizerEmail: event.organizerEmail,
+            selfResponseStatus: event.selfResponseStatus ?? null,
           },
         })
         .returning({ id: calendarEvents.id });

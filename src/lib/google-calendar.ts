@@ -18,12 +18,22 @@ export type NormalizedEvent = {
   organizerEmail: string | null;
   // Google's parent recurring-series id; null for one-off events.
   recurringEventId: string | null;
+  // The user's own RSVP ("declined" hides the meeting from the day view).
+  selfResponseStatus: string | null;
   attendees: NormalizedAttendee[];
 };
 
 function eventDate(point: calendar_v3.Schema$EventDateTime | undefined): Date | null {
   const value = point?.dateTime ?? point?.date; // dateTime for timed, date for all-day
   return value ? new Date(value) : null;
+}
+
+// The authenticated user's own RSVP for this event ("accepted" / "declined" /
+// "tentative" / "needsAction"), or null when we aren't listed as an attendee.
+// Google flags our attendee entry with `self: true`. Used to hide meetings the
+// user declined from the day view.
+function selfResponseStatus(e: calendar_v3.Schema$Event): string | null {
+  return (e.attendees ?? []).find((a) => a.self)?.responseStatus ?? null;
 }
 
 // Fetch every event in [from, to] for the primary calendar, following pagination.
@@ -66,6 +76,8 @@ export type DayEvent = {
   organizerEmail: string | null;
   // Google's parent recurring-series id; null for one-off events.
   recurringEventId: string | null;
+  // The user's own RSVP ("declined" hides the meeting from the day view).
+  selfResponseStatus: string | null;
   attendees: NormalizedAttendee[];
 };
 
@@ -106,6 +118,7 @@ export async function fetchDayEvents(
       location: e.location?.trim() || null,
       organizerEmail: e.organizer?.email ? e.organizer.email.toLowerCase() : null,
       recurringEventId: e.recurringEventId ?? null,
+      selfResponseStatus: selfResponseStatus(e),
       attendees,
     });
   }
@@ -151,6 +164,7 @@ export async function fetchMeetingEvents(
       endsAt,
       organizerEmail: e.organizer?.email ? e.organizer.email.toLowerCase() : null,
       recurringEventId: e.recurringEventId ?? null,
+      selfResponseStatus: selfResponseStatus(e),
       attendees,
     });
   }
