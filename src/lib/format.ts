@@ -39,3 +39,12 @@ export function formatDate(value: Date | string): string {
 export function formatRange(start: Date | string, end: Date | string): string {
   return `${formatDateTime(start)} – ${formatDateTime(end)}`;
 }
+
+// "2026-07-03" in the *local* timezone (unlike Date#toISOString, which is UTC
+// and can land on the wrong day). Used for the ?date= param and <input type="date">.
+export function toDateParam(value: Date): string {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, "0");
+  const d = String(value.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}

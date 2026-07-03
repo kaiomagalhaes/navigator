@@ -39,6 +39,10 @@ export default async function EventDetailPage({
     participants.map(({ person }) => listRecentMeetingsWithPerson(person.id, event.id))
   );
 
+  // Fathom only has recordings for meetings that have already happened, so the
+  // "Sync with Fathom" action makes no sense for an event still in the future.
+  const isUpcoming = event.startsAt > new Date();
+
   const recording = event.fathomRecording;
   const transcript = (recording?.transcript ?? null) as FathomTranscriptEntry[] | null;
   const hasTranscript = !!transcript && transcript.length > 0;
@@ -104,7 +108,7 @@ export default async function EventDetailPage({
           </Link>
           <h1 className="mt-2 text-2xl font-semibold tracking-tight">{event.name}</h1>
         </div>
-        <FathomSyncForm eventId={event.id} />
+        {!isUpcoming && <FathomSyncForm eventId={event.id} />}
       </div>
 
       <dl className="grid gap-4 rounded-xl border border-zinc-200 bg-white p-6 sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-950">

@@ -13,6 +13,10 @@ export type PersistableEvent = {
   endsAt: Date;
   organizerEmail: string | null;
   attendees: { name: string; email: string }[];
+  // Present on the day view (DayEvent); absent on the import path (NormalizedEvent),
+  // where they default to false / null.
+  isAllDay?: boolean;
+  location?: string | null;
 };
 
 // Idempotently upsert events (and their attendees) for one account. Events are
@@ -46,6 +50,8 @@ export async function persistEvents<T extends PersistableEvent>(
           name: event.name,
           startsAt: event.startsAt,
           endsAt: event.endsAt,
+          isAllDay: event.isAllDay ?? false,
+          location: event.location ?? null,
           accountId,
           googleEventId: event.googleEventId,
           organizerEmail: event.organizerEmail,
@@ -56,6 +62,8 @@ export async function persistEvents<T extends PersistableEvent>(
             name: event.name,
             startsAt: event.startsAt,
             endsAt: event.endsAt,
+            isAllDay: event.isAllDay ?? false,
+            location: event.location ?? null,
             organizerEmail: event.organizerEmail,
           },
         })

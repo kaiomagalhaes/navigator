@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, boolean, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // A connected Google account whose calendar we import from. Tokens are stored
@@ -20,6 +20,10 @@ export const calendarEvents = pgTable(
     name: text("name").notNull(),
     startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
     endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    // All-day events carry a date (not a time) on Google; kept so the day view
+    // renders "All day" identically whether read from the DB or freshly pulled.
+    isAllDay: boolean("is_all_day").notNull().default(false),
+    location: text("location"),
     // Provenance for imported events. Manually created events leave these null.
     accountId: uuid("account_id").references(() => googleAccounts.id, { onDelete: "set null" }),
     googleEventId: text("google_event_id"),

@@ -1,5 +1,5 @@
 import "server-only";
-import { asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "./index";
 import { calendarEvents, eventParticipants, googleAccounts, persons, todos } from "./schema";
 
@@ -18,6 +18,19 @@ export async function listEvents() {
     with: {
       participants: { with: { person: true } },
       fathomRecording: true,
+    },
+  });
+}
+
+// Stored events that start within [from, to), earliest first, with attendees.
+// Powers the home page's day view: it reads these first and only falls back to
+// pulling from Google when this comes back empty for the chosen day.
+export async function listEventsForDay(from: Date, to: Date) {
+  return db.query.calendarEvents.findMany({
+    where: and(gte(calendarEvents.startsAt, from), lt(calendarEvents.startsAt, to)),
+    orderBy: [asc(calendarEvents.startsAt)],
+    with: {
+      participants: { with: { person: true } },
     },
   });
 }

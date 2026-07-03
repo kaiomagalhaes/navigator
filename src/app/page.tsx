@@ -1,33 +1,74 @@
 import Link from "next/link";
 import { db } from "@/db";
 import { getAuthedClient } from "@/lib/google";
-import { fetchDayEvents, type DayEvent } from "@/lib/google-calendar";
+import { fetchDayEvents } from "@/lib/google-calendar";
 import { persistEvents } from "@/lib/events-store";
-import { formatTime, formatDay } from "@/lib/format";
+import { listEventsForDay } from "@/db/queries";
+import { formatTime, formatDay, toDateParam } from "@/lib/format";
+import { DateNav } from "@/components/date-nav";
 
-// This page reads live from Google Calendar on every request, so never cache it.
+// This page reads a day's agenda on every request (from the DB, falling back to
+// a live Google pull), so never cache it.
 export const dynamic = "force-dynamic";
 
-// A today event, once stored, carries the DB id we link to.
-type TodayEvent = DayEvent & { id: string };
+// One row on the day's agenda, however it was sourced (stored or freshly pulled).
+type AgendaEvent = {
+  id: string;
+  // Google's id when known; null for manually-created events. Used to identify
+  // and de-duplicate the same meeting shared across connected calendars.
+  googleEventId: string | null;
+  name: string;
+  startsAt: Date;
+  endsAt: Date;
+  isAllDay: boolean;
+  location: string | null;
+  attendeeCount: number;
+};
 
-type TodayResult =
+type DayResult =
   | { status: "no-accounts" }
   | { status: "error" }
-  | { status: "ok"; events: TodayEvent[] };
+  | { status: "ok"; events: AgendaEvent[] };
 
-// Pull today's events from every connected Google Calendar and store them, so
-// each has a real event page to link to. The upsert is idempotent, so loading
-// the homepage repeatedly just keeps today's meetings in sync.
-async function getTodaysEvents(): Promise<TodayResult> {
+// A meeting's identity for de-duplication across calendars: its Google id when
+// present, else its own row id (manual events never collide).
+const eventKey = (e: AgendaEvent) => e.googleEventId ?? e.id;
+
+function dedupe(events: AgendaEvent[]): AgendaEvent[] {
+  const seen = new Set<string>();
+  return events
+    .filter((e) => (seen.has(eventKey(e)) ? false : seen.add(eventKey(e))))
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+}
+
+// Load the agenda for [dayStart, dayEnd). DB-first: show events already stored
+// for the day, and only pull them from Google (persisting as we go) when none
+// are stored yet. So selecting a fresh day fetches it once, then reads locally.
+async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
   const accounts = await db.query.googleAccounts.findMany();
   if (accounts.length === 0) return { status: "no-accounts" };
 
-  const now = new Date();
-  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayStart.getDate() + 1);
+  const stored = await listEventsForDay(dayStart, dayEnd);
+  if (stored.length > 0) {
+    return {
+      status: "ok",
+      events: dedupe(
+        stored.map((e) => ({
+          id: e.id,
+          googleEventId: e.googleEventId,
+          name: e.name,
+          startsAt: e.startsAt,
+          endsAt: e.endsAt,
+          isAllDay: e.isAllDay,
+          location: e.location,
+          attendeeCount: e.participants.length,
+        }))
+      ),
+    };
+  }
 
+  // Nothing stored for this day yet — pull it from every connected calendar and
+  // store it, so each meeting gets a real event page to link to.
   try {
     const perAccount = await Promise.all(
       accounts.map(async (account) => {
@@ -37,18 +78,33 @@ async function getTodaysEvents(): Promise<TodayResult> {
       })
     );
 
-    // Merge calendars, de-duplicate shared events, and sort by start time.
-    const seen = new Set<string>();
-    const events = perAccount
-      .flat()
-      .filter((e) => (seen.has(e.googleEventId) ? false : seen.add(e.googleEventId)))
-      .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    const events = perAccount.flat().map((e) => ({
+      id: e.id,
+      googleEventId: e.googleEventId,
+      name: e.name,
+      startsAt: e.startsAt,
+      endsAt: e.endsAt,
+      isAllDay: e.isAllDay,
+      location: e.location,
+      attendeeCount: e.attendees.length,
+    }));
 
-    return { status: "ok", events };
+    return { status: "ok", events: dedupe(events) };
   } catch (err) {
-    console.error("[home] failed to load today's events", err);
+    console.error("[home] failed to load the day's events", err);
     return { status: "error" };
   }
+}
+
+// Local midnight for a "YYYY-MM-DD" param; today's local midnight when the param
+// is missing or malformed.
+function parseDay(value: string | undefined): Date {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const m = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!m) return today;
+  const parsed = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(parsed.getTime()) ? today : parsed;
 }
 
 function greeting(hour: number): { text: string; emoji: string } {
@@ -56,6 +112,8 @@ function greeting(hour: number): { text: string; emoji: string } {
   if (hour < 18) return { text: "Good afternoon", emoji: "🌤️" };
   return { text: "Good evening", emoji: "🌙" };
 }
+
+type Tense = "today" | "past" | "future";
 
 // A little personality: pick an emoji from the event title, falling back to 📌.
 function eventEmoji(name: string): string {
@@ -79,28 +137,57 @@ const ACCENTS = [
   { bar: "bg-violet-400", chip: "bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300" },
 ];
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ date?: string }>;
+}) {
+  const { date } = await searchParams;
   const now = new Date();
-  const { text, emoji } = greeting(now.getHours());
-  const result = await getTodaysEvents();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayStart = parseDay(date);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayStart.getDate() + 1);
 
+  const dayDiff = Math.round((dayStart.getTime() - todayStart.getTime()) / 86_400_000);
+  const tense: Tense = dayDiff === 0 ? "today" : dayDiff < 0 ? "past" : "future";
+  const isToday = tense === "today";
+
+  const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
-  const nextUpId = events.find((e) => !e.isAllDay && e.endsAt > now)?.googleEventId;
+
+  // "Happening now" / "Up next" only make sense for today.
+  const nextUp = isToday ? events.find((e) => !e.isAllDay && e.endsAt > now) : undefined;
+  const nextKey = nextUp ? eventKey(nextUp) : undefined;
+
+  const { text, emoji } = greeting(now.getHours());
+  const heading = isToday
+    ? `${text}! ${emoji}`
+    : dayDiff === -1
+      ? "Yesterday"
+      : dayDiff === 1
+        ? "Tomorrow"
+        : formatDay(dayStart);
 
   return (
     <div className="flex flex-col gap-8">
       {/* Hero */}
       <div className="rounded-3xl bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 p-8 text-white shadow-lg">
         <p className="text-sm font-medium uppercase tracking-wide text-white/80">
-          {formatDay(now)}
+          {formatDay(dayStart)}
         </p>
-        <h1 className="mt-2 text-4xl font-bold tracking-tight">
-          {text}! {emoji}
-        </h1>
-        <p className="mt-3 text-lg text-white/90">{summaryLine(result, now)}</p>
+        <h1 className="mt-2 text-4xl font-bold tracking-tight">{heading}</h1>
+        <p className="mt-3 text-lg text-white/90">{summaryLine(result, tense, now)}</p>
       </div>
 
-      {/* Today */}
+      {/* Day selector */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+          {isToday ? "Today's agenda" : "Agenda"}
+        </h2>
+        <DateNav date={toDateParam(dayStart)} today={toDateParam(todayStart)} />
+      </div>
+
       {result.status === "no-accounts" && (
         <EmptyCard
           emoji="🔌"
@@ -121,9 +208,21 @@ export default async function Home() {
 
       {result.status === "ok" && events.length === 0 && (
         <EmptyCard
-          emoji="🌴"
-          title="Your day is wide open"
-          body="Nothing on the calendar today — go enjoy it!"
+          emoji={tense === "future" ? "📭" : "🌴"}
+          title={
+            tense === "today"
+              ? "Your day is wide open"
+              : tense === "future"
+                ? "Nothing scheduled — yet"
+                : "No meetings that day"
+          }
+          body={
+            tense === "today"
+              ? "Nothing on the calendar today — go enjoy it!"
+              : tense === "future"
+                ? "This day is clear so far. Check back as it fills up."
+                : "There were no meetings on the calendar that day."
+          }
         />
       )}
 
@@ -131,11 +230,11 @@ export default async function Home() {
         <section className="flex flex-col gap-3">
           {events.map((event, i) => {
             const accent = ACCENTS[i % ACCENTS.length];
-            const isNext = event.googleEventId === nextUpId;
-            const isNow = !event.isAllDay && event.startsAt <= now && event.endsAt > now;
+            const isNext = eventKey(event) === nextKey;
+            const isNow = isToday && !event.isAllDay && event.startsAt <= now && event.endsAt > now;
             return (
               <Link
-                key={event.googleEventId}
+                key={eventKey(event)}
                 href={`/events/${event.id}`}
                 className="relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
               >
@@ -162,7 +261,7 @@ export default async function Home() {
                       ? "All day"
                       : `${formatTime(event.startsAt)} – ${formatTime(event.endsAt)}`}
                     {event.location ? ` · ${event.location}` : ""}
-                    {` · ${event.attendees.length} people`}
+                    {` · ${event.attendeeCount} people`}
                   </p>
                 </div>
               </Link>
@@ -174,15 +273,23 @@ export default async function Home() {
   );
 }
 
-function summaryLine(result: TodayResult, now: Date): string {
+function summaryLine(result: DayResult, tense: Tense, now: Date): string {
   if (result.status === "no-accounts") return "Connect a calendar to see your day.";
   if (result.status === "error") return "We hit a snag loading your schedule.";
 
   const count = result.events.length;
-  if (count === 0) return "No events today — a clean slate. ✨";
+  const plural = count === 1 ? "event" : "events";
+
+  if (count === 0) {
+    if (tense === "today") return "No events today — a clean slate. ✨";
+    if (tense === "future") return "Nothing scheduled — yet.";
+    return "No meetings on the calendar that day.";
+  }
+
+  if (tense === "past") return `${count} ${plural} that day. Here's what happened. 🗂️`;
+  if (tense === "future") return `${count} ${plural} scheduled. Plan ahead. 🗓️`;
 
   const upcoming = result.events.filter((e) => !e.isAllDay && e.startsAt > now).length;
-  const plural = count === 1 ? "event" : "events";
   if (upcoming === 0) return `${count} ${plural} today — you're all wrapped up. 🎉`;
   return `${count} ${plural} today, ${upcoming} still to come. Let's make it a great one! 🚀`;
 }
