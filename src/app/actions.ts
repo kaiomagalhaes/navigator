@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { calendarEvents, googleAccounts, seriesPrepSettings, todos } from "@/db/schema";
@@ -145,11 +146,14 @@ export async function syncEventWithFathom(
 
 // ---- Extract to-dos --------------------------------------------------------
 
-export type ExtractTodosState = { error?: string; count?: number };
+export type ExtractTodosState = { error?: string; started?: boolean };
 
-// Extract action items from an event's transcript with OpenAI, tying each to a
-// participant where possible. Regenerates the set on every run (delete-then-
-// insert), so re-extracting replaces the previous to-dos rather than duplicating.
+// Kick off action-item extraction for an event's transcript. The OpenAI call can
+// run well past Heroku's hard 30s request timeout (H12), so we DON'T do it inline:
+// we mark the event "running", return immediately, and let `after` run the LLM
+// work once the response has been sent. The event page polls todosExtractionStatus
+// until it settles (null = done, "error" = failed). Regenerates the set on every
+// run (delete-then-insert), so re-extracting replaces rather than duplicates.
 export async function extractEventTodos(
   _prev: ExtractTodosState,
   formData: FormData
@@ -165,14 +169,34 @@ export async function extractEventTodos(
     return { error: "This event has no transcript to extract to-dos from." };
   }
 
-  try {
-    const count = await regenerateEventTodos(event);
+  // Mark it running so the re-rendered page shows the in-progress state and
+  // starts polling. Clears any prior error.
+  await db
+    .update(calendarEvents)
+    .set({ todosExtractionStatus: "running", todosExtractionError: null })
+    .where(eq(calendarEvents.id, event.id));
+  revalidatePath(`/events/${event.id}`);
+
+  // Do the slow LLM work after the response is flushed — this is not bound by the
+  // 30s router timeout. regenerateEventTodos persists the to-dos on success.
+  after(async () => {
+    try {
+      await regenerateEventTodos(event);
+      await db
+        .update(calendarEvents)
+        .set({ todosExtractionStatus: null, todosExtractionError: null })
+        .where(eq(calendarEvents.id, event.id));
+    } catch (err) {
+      console.error("[extractEventTodos]", err);
+      await db
+        .update(calendarEvents)
+        .set({ todosExtractionStatus: "error", todosExtractionError: describeOpenAiError(err) })
+        .where(eq(calendarEvents.id, event.id));
+    }
     revalidatePath(`/events/${event.id}`);
-    return { count };
-  } catch (err) {
-    console.error("[extractEventTodos]", err);
-    return { error: describeOpenAiError(err) };
-  }
+  });
+
+  return { started: true };
 }
 
 // ---- Prepare for a meeting -------------------------------------------------

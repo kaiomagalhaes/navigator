@@ -39,6 +39,13 @@ export const calendarEvents = pgTable(
     // meeting prep tell "not extracted yet" from "extracted, but zero to-dos" so
     // it doesn't re-run the LLM on every "Prepare".
     todosExtractedAt: timestamp("todos_extracted_at", { withTimezone: true }),
+    // Async state for the on-demand "Extract to-dos" action. The LLM call runs
+    // in the background (via next/server `after`) so it doesn't hit Heroku's
+    // 30s request timeout; the event page polls this until it settles.
+    // "running" while extracting, "error" if it failed (message in
+    // todosExtractionError), null when idle or done.
+    todosExtractionStatus: text("todos_extraction_status"),
+    todosExtractionError: text("todos_extraction_error"),
     // The saved "Prepare" result (gathered action items + AI coaching). Set once
     // you click Prepare on an upcoming meeting; its presence hides the button and
     // shows the stored briefing instead. Shape: StoredPrep in src/app/actions.ts.

@@ -99,6 +99,13 @@
       "when": 1783090711202,
       "tag": "0013_curly_warlock",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1783095484089,
+      "tag": "0014_typical_the_twelve",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,10 @@ function timestampToSeconds(ts: string): number | null {
   return parts.reduce((acc, n) => acc * 60 + n, 0);
 }
 
+// Read live on every request: the to-do extraction status is polled here via
+// router.refresh(), so this page must never serve a cached render.
+export const dynamic = "force-dynamic";
+
 export default async function EventDetailPage({
   params,
 }: {
@@ -200,7 +204,12 @@ export default async function EventDetailPage({
           )}
 
           {hasTranscript && (
-            <ExtractTodosForm eventId={event.id} hasTodos={event.todos.length > 0} />
+            <ExtractTodosForm
+              eventId={event.id}
+              hasTodos={event.todos.length > 0}
+              status={event.todosExtractionStatus as "running" | "error" | null}
+              errorMessage={event.todosExtractionError}
+            />
           )}
 
           {hasTranscript && <TranscriptViewer entries={transcript} />}
