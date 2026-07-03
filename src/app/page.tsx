@@ -7,6 +7,8 @@ import { getDaySync, listEventsForDay, listSkippedSeriesIds } from "@/db/queries
 import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/lib/format";
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
+import { TodoistTaskItem } from "@/components/todoist-task";
+import { listTasksDueToday, type TodoistTask } from "@/lib/todoist";
 import { PrepareTodayOnce } from "@/components/prepare-today-once";
 import { PrepareDayButton } from "@/components/prepare-day-button";
 
@@ -161,6 +163,23 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
   }
 }
 
+type TodoistResult =
+  | { status: "ok"; tasks: TodoistTask[] }
+  | { status: "not-configured" }
+  | { status: "error" };
+
+// Today's tasks from the configured work projects (TODOIST_PROJECT_IDS), shown
+// on the home page when viewing today.
+async function getTodayTasks(): Promise<TodoistResult> {
+  if (!process.env.TODOIST_API_TOKEN) return { status: "not-configured" };
+  try {
+    return { status: "ok", tasks: await listTasksDueToday() };
+  } catch (err) {
+    console.error("[home] failed to load Todoist tasks", err);
+    return { status: "error" };
+  }
+}
+
 function greeting(hour: number): { text: string; emoji: string } {
   if (hour < 12) return { text: "Good morning", emoji: "☀️" };
   if (hour < 18) return { text: "Good afternoon", emoji: "🌤️" };
@@ -217,6 +236,10 @@ export default async function Home({
   const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
   const daySync = await getDaySync(dateKey);
+  // Today's work-project to-dos — only when actually viewing today (Todoist
+  // "today" is always the real today, regardless of the day being browsed).
+  const todayTasks = isToday ? await getTodayTasks() : null;
+  const todayDateKey = toDateParam(todayStart);
   // Skipped-series meetings aren't prepped by the batch route, so exclude them
   // from the button count (keeps "Prep N meetings" in sync with what runs).
   const unpreparedCount = events.filter((e) => !e.prepared && !e.skipPrep).length;
@@ -376,6 +399,33 @@ export default async function Home({
               </Link>
             );
           })}
+        </section>
+      )}
+
+      {todayTasks && todayTasks.status !== "not-configured" && (
+        <section className="flex flex-col gap-3">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+              Today&apos;s to-dos
+            </h2>
+            {todayTasks.status === "ok" && (
+              <span className="text-xs text-zinc-400">
+                {todayTasks.tasks.length} from your work projects
+              </span>
+            )}
+          </div>
+
+          {todayTasks.status === "error" ? (
+            <p className="text-sm text-zinc-500">Couldn&apos;t reach Todoist right now.</p>
+          ) : todayTasks.tasks.length === 0 ? (
+            <p className="text-sm text-zinc-500">Nothing due today in your work projects. 🎉</p>
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {todayTasks.tasks.map((task) => (
+                <TodoistTaskItem key={task.id} task={task} today={todayDateKey} />
+              ))}
+            </ul>
+          )}
         </section>
       )}
     </div>

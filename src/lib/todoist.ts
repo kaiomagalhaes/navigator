@@ -78,23 +78,29 @@ async function todoistFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T;
 }
 
-// Every task due today or overdue, via the "today | overdue" smart filter.
-// Pages through next_cursor so a heavy backlog isn't silently truncated; capped
-// at a generous number of pages as a runaway guard. When TODOIST_PROJECT_IDS is
-// set (comma-separated), only tasks in those projects are returned (sub-projects
-// excluded).
-export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
-  const projectIds = new Set(
+// The configured "work" projects. When TODOIST_PROJECT_IDS is set
+// (comma-separated), task queries are limited to these projects (sub-projects
+// excluded); empty means all projects.
+function workProjectIds(): Set<string> {
+  return new Set(
     (process.env.TODOIST_PROJECT_IDS || "")
       .split(",")
       .map((id) => id.trim())
       .filter(Boolean)
   );
+}
+
+// Run a Todoist smart-filter query, restricted to the work projects, paging
+// through next_cursor so a heavy backlog isn't silently truncated (capped at a
+// generous number of pages as a runaway guard). Results are sorted oldest due
+// date first, then by priority (4 → 1); tasks with no date sort last.
+async function listTasksMatching(filter: string): Promise<TodoistTask[]> {
+  const projectIds = workProjectIds();
   const tasks: TodoistTask[] = [];
   let cursor: string | null = null;
 
   for (let page = 0; page < 20; page++) {
-    const query = new URLSearchParams({ query: "today | overdue" });
+    const query = new URLSearchParams({ query: filter });
     if (cursor) query.set("cursor", cursor);
     const data: FilterResponse = await todoistFetch(`/tasks/filter?${query}`);
 
@@ -108,14 +114,22 @@ export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
     if (!cursor) break;
   }
 
-  // Oldest due date first, so the most overdue surface at the top; break ties
-  // by priority (4 → 1). Tasks with no date sort last.
   return tasks.sort((a, b) => {
     const da = a.dueDate ?? "9999-99-99";
     const db = b.dueDate ?? "9999-99-99";
     if (da !== db) return da < db ? -1 : 1;
     return b.priority - a.priority;
   });
+}
+
+// Every work-project task due today or overdue (To Dos page).
+export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
+  return listTasksMatching("today | overdue");
+}
+
+// Work-project tasks due today (Activity page's "today's to-dos").
+export async function listTasksDueToday(): Promise<TodoistTask[]> {
+  return listTasksMatching("today");
 }
 
 // Complete (close) a task in Todoist. For a recurring task this advances it to
