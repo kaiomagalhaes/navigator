@@ -11,7 +11,16 @@ if (!connectionString) {
 // Reuse a single Pool across hot reloads in development.
 const globalForDb = globalThis as unknown as { pool?: Pool };
 
-const pool = globalForDb.pool ?? new Pool({ connectionString });
+// Managed Postgres (Heroku) presents a self-signed cert over TLS; enable SSL
+// without CA verification for remote hosts. Local Docker Postgres uses no TLS.
+const isLocal = /@(localhost|127\.0\.0\.1)[:/]/.test(connectionString);
+
+const pool =
+  globalForDb.pool ??
+  new Pool({
+    connectionString,
+    ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
+  });
 if (process.env.NODE_ENV !== "production") globalForDb.pool = pool;
 
 export const db = drizzle(pool, { schema });
