@@ -1,7 +1,7 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { todos } from "@/db/schema";
+import { calendarEvents, todos } from "@/db/schema";
 import { extractTodos } from "./extract-todos";
 import type { FathomTranscriptEntry } from "./fathom-meetings";
 
@@ -89,6 +89,12 @@ export async function regenerateEventTodos(event: EventWithContext): Promise<num
     if (rows.length > 0) {
       await tx.insert(todos).values(rows);
     }
+    // Mark the event extracted (even when zero to-dos came out) so prep won't
+    // re-run the LLM on it next time.
+    await tx
+      .update(calendarEvents)
+      .set({ todosExtractedAt: new Date() })
+      .where(eq(calendarEvents.id, event.id));
   });
 
   return rows.length;

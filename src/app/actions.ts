@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { calendarEvents, googleAccounts, todos } from "@/db/schema";
-import { getEvent } from "@/db/queries";
+import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
 import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
@@ -182,6 +182,159 @@ export async function extractEventTodos(
     console.error("[extractEventTodos]", err);
     return { error: describeOpenAiError(err) };
   }
+}
+
+// ---- Prepare for a meeting -------------------------------------------------
+
+// One outstanding action item surfaced for meeting prep, with the meeting it
+// came from so the prep view can link back and show recency.
+export type PrepItem = {
+  id: string;
+  text: string;
+  meetingId: string;
+  meetingName: string;
+  meetingDate: Date;
+  copied: boolean; // already sent to Todoist
+};
+
+export type PrepGroup = {
+  personId: string;
+  name: string;
+  email: string;
+  items: PrepItem[];
+};
+
+// `extracted` is how many past meetings we had to extract to-dos from on the fly.
+export type PrepareState = { error?: string; ran?: boolean; extracted?: number; groups?: PrepGroup[] };
+
+// Prep for an upcoming meeting: for each attendee, look at their last 3 past
+// meetings, extract to-dos from any that have a transcript but weren't extracted
+// yet, then surface every action item assigned to someone who's also in this
+// meeting. Best-effort extraction — an OpenAI failure aborts with a message.
+export async function prepareMeeting(
+  _prev: PrepareState,
+  formData: FormData
+): Promise<PrepareState> {
+  const startedAt = Date.now();
+  const eventId = String(formData.get("eventId") ?? "");
+  if (!eventId) {
+    console.warn("[prepareMeeting] aborted: no eventId in form data");
+    return { error: "Missing event." };
+  }
+
+  const current = await getEvent(eventId);
+  if (!current) {
+    console.warn(`[prepareMeeting] aborted: event ${eventId} not found`);
+    return { error: "That event no longer exists." };
+  }
+
+  console.log(
+    `[prepareMeeting] start "${current.name}" (${eventId}) — ${current.participants.length} attendee(s)`
+  );
+
+  // Who's in this meeting — we only surface to-dos assigned to these people.
+  const attendeeEmails = new Set(current.participants.map((p) => p.person.email.toLowerCase()));
+  if (attendeeEmails.size === 0) {
+    console.log(`[prepareMeeting] no attendees on "${current.name}" — nothing to prepare`);
+    return { ran: true, extracted: 0, groups: [] };
+  }
+
+  // Union of each attendee's last 3 past meetings (this event excluded).
+  const meetingIds = new Set<string>();
+  await Promise.all(
+    current.participants.map(async ({ person }) => {
+      const recent = await listRecentMeetingsWithPerson(person.id, eventId, 3);
+      console.log(
+        `[prepareMeeting]   ${person.name} <${person.email}> → ${recent.length} recent meeting(s)`
+      );
+      recent.forEach((m) => meetingIds.add(m.id));
+    })
+  );
+  console.log(
+    `[prepareMeeting] ${meetingIds.size} unique past meeting(s) to review across all attendees`
+  );
+  if (meetingIds.size === 0) {
+    console.log(`[prepareMeeting] done in ${Date.now() - startedAt}ms — no history with these people`);
+    return { ran: true, extracted: 0, groups: [] };
+  }
+
+  let meetings = await Promise.all([...meetingIds].map((id) => getEvent(id)));
+
+  // Extract to-dos for any transcript-bearing meeting we haven't processed yet.
+  let extracted = 0;
+  try {
+    for (const meeting of meetings) {
+      if (!meeting) continue;
+      const transcript = meeting.fathomRecording?.transcript;
+      const hasTranscript = Array.isArray(transcript) && transcript.length > 0;
+      // Extract only once per meeting: skip when already extracted (even to zero
+      // to-dos) or when to-dos already exist from an earlier extraction.
+      const needsExtraction =
+        hasTranscript && meeting.todosExtractedAt === null && meeting.todos.length === 0;
+      if (needsExtraction) {
+        console.log(`[prepareMeeting]   extracting to-dos from "${meeting.name}" (${meeting.id})…`);
+        const at = Date.now();
+        const count = await regenerateEventTodos(meeting);
+        extracted++;
+        console.log(
+          `[prepareMeeting]   extracted ${count} to-do(s) from "${meeting.name}" in ${Date.now() - at}ms`
+        );
+      } else if (!hasTranscript) {
+        console.log(`[prepareMeeting]   skip "${meeting.name}" — no Fathom transcript`);
+      } else {
+        console.log(
+          `[prepareMeeting]   skip "${meeting.name}" — already extracted (${meeting.todos.length} existing to-do(s))`
+        );
+      }
+    }
+  } catch (err) {
+    console.error(`[prepareMeeting] extraction failed after ${Date.now() - startedAt}ms:`, err);
+    return { error: describeOpenAiError(err) };
+  }
+
+  // Re-read the meetings we just extracted so their fresh to-dos are included.
+  if (extracted > 0) {
+    meetings = await Promise.all([...meetingIds].map((id) => getEvent(id)));
+  }
+
+  // Group the matching to-dos by assignee (only people also in this meeting).
+  const groups = new Map<string, PrepGroup>();
+  let itemCount = 0;
+  for (const meeting of meetings) {
+    if (!meeting) continue;
+    for (const todo of meeting.todos) {
+      if (!todo.person) continue;
+      if (!attendeeEmails.has(todo.person.email.toLowerCase())) continue;
+      const group = groups.get(todo.person.id) ?? {
+        personId: todo.person.id,
+        name: todo.person.name,
+        email: todo.person.email,
+        items: [],
+      };
+      group.items.push({
+        id: todo.id,
+        text: todo.text,
+        meetingId: meeting.id,
+        meetingName: meeting.name,
+        meetingDate: meeting.startsAt,
+        copied: Boolean(todo.todoistTaskId),
+      });
+      groups.set(todo.person.id, group);
+      itemCount++;
+    }
+  }
+
+  console.log(
+    `[prepareMeeting] done in ${Date.now() - startedAt}ms — ${extracted} meeting(s) extracted, ` +
+      `${itemCount} item(s) across ${groups.size} of ${current.participants.length} attendee(s)`
+  );
+
+  revalidatePath(`/events/${eventId}`);
+  return {
+    ran: true,
+    extracted,
+    groups: [...groups.values()].sort((a, b) => a.name.localeCompare(b.name)),
+  };
 }
 
 // ---- Todoist -------------------------------------------------------------

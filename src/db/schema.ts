@@ -31,6 +31,10 @@ export const calendarEvents = pgTable(
     // Set once you've reviewed this meeting's to-dos on the To Dos page. When
     // set, the meeting is hidden from that page's "From your meetings" list.
     todosReviewedAt: timestamp("todos_reviewed_at", { withTimezone: true }),
+    // Set the first time we extract to-dos from this meeting's transcript. Lets
+    // meeting prep tell "not extracted yet" from "extracted, but zero to-dos" so
+    // it doesn't re-run the LLM on every "Prepare".
+    todosExtractedAt: timestamp("todos_extracted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

@@ -57,6 +57,13 @@
       "when": 1783078230820,
       "tag": "0007_cute_puppet_master",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1783079428561,
+      "tag": "0008_bouncy_donald_blake",
+      "breakpoints": true
     }
   ]
 }

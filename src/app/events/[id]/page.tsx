@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
+import { MeetingPrep } from "@/components/meeting-prep";
 import { ExtractTodosForm } from "@/components/extract-todos-form";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { MeetingTodo } from "@/components/meeting-todo";
@@ -121,6 +122,8 @@ export default async function EventDetailPage({
           <dd className="mt-1 font-medium">{formatDateTime(event.endsAt)}</dd>
         </div>
       </dl>
+
+      {isUpcoming && <MeetingPrep eventId={event.id} />}
 
       {recording && (
         <section className="flex flex-col gap-4">

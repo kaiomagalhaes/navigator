@@ -1,0 +1,1 @@
+ALTER TABLE "calendar_events" ADD COLUMN "todos_extracted_at" timestamp with time zone;
