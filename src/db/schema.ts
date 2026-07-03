@@ -104,8 +104,11 @@ export const fathomRecordings = pgTable("fathom_recordings", {
   title: text("title"),
   url: text("url"),
   shareUrl: text("share_url"),
-  summary: text("summary"), // default_summary.markdown_formatted, when present
-  transcript: jsonb("transcript"), // normalized FathomTranscriptEntry[]
+  // Encrypted at rest (AES-256-GCM) via @/lib/crypto; decrypted in the query
+  // layer (src/db/queries.ts). summary is the markdown default summary;
+  // transcript is the JSON-encoded FathomTranscriptEntry[].
+  summary: text("summary"), // encrypted default_summary.markdown_formatted
+  transcript: text("transcript"), // encrypted JSON of FathomTranscriptEntry[]
   scheduledStartTime: timestamp("scheduled_start_time", { withTimezone: true }),
   syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
 });

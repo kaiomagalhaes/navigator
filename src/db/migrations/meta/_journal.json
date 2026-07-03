@@ -92,6 +92,13 @@
       "when": 1783086904006,
       "tag": "0012_striped_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1783090711202,
+      "tag": "0013_curly_warlock",
+      "breakpoints": true
     }
   ]
 }

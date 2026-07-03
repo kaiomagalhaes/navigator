@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { fathomRecordings, type GoogleAccount } from "@/db/schema";
+import { encrypt } from "@/lib/crypto";
 import { getAuthedClient } from "@/lib/google";
 import { fetchMeetingEvents } from "@/lib/google-calendar";
 import { persistEvents } from "@/lib/events-store";
@@ -16,6 +17,9 @@ import {
 // the manual "Sync with Fathom" action.
 export async function linkFathomRecording(eventId: string, match: FathomMeeting): Promise<void> {
   const transcript = await fetchTranscript(match.recordingId);
+  // Encrypt meeting content at rest; decrypted in the query layer on read.
+  const encTranscript = encrypt(JSON.stringify(transcript));
+  const encSummary = match.summary ? encrypt(match.summary) : null;
   await db
     .insert(fathomRecordings)
     .values({
@@ -24,8 +28,8 @@ export async function linkFathomRecording(eventId: string, match: FathomMeeting)
       title: match.title,
       url: match.url,
       shareUrl: match.shareUrl,
-      summary: match.summary,
-      transcript,
+      summary: encSummary,
+      transcript: encTranscript,
       scheduledStartTime: match.scheduledStartTime,
     })
     .onConflictDoUpdate({
@@ -35,8 +39,8 @@ export async function linkFathomRecording(eventId: string, match: FathomMeeting)
         title: match.title,
         url: match.url,
         shareUrl: match.shareUrl,
-        summary: match.summary,
-        transcript,
+        summary: encSummary,
+        transcript: encTranscript,
         scheduledStartTime: match.scheduledStartTime,
         syncedAt: new Date(),
       },

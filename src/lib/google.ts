@@ -1,9 +1,9 @@
 import "server-only";
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { google } from "googleapis";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { googleAccounts, type GoogleAccount } from "@/db/schema";
+import { encrypt, decrypt } from "@/lib/crypto";
 
 // Read-only calendar access + the account's email address (to key the connection).
 export const GOOGLE_SCOPES = [
@@ -26,33 +26,11 @@ export function createOAuthClient() {
 }
 
 // ---- Token encryption at rest (AES-256-GCM) --------------------------------
+// Thin aliases over the shared crypto helpers (@/lib/crypto), kept so the OAuth
+// callback route and this module read as token-specific at their call sites.
 
-function encryptionKey(): Buffer {
-  const key = Buffer.from(requireEnv("GOOGLE_TOKEN_ENC_KEY"), "hex");
-  if (key.length !== 32) {
-    throw new Error("GOOGLE_TOKEN_ENC_KEY must be a 32-byte hex string (64 hex chars).");
-  }
-  return key;
-}
-
-// Stored as "iv:authTag:ciphertext", all hex.
-export function encryptToken(plaintext: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(), iv);
-  const enc = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  const tag = cipher.getAuthTag();
-  return [iv.toString("hex"), tag.toString("hex"), enc.toString("hex")].join(":");
-}
-
-export function decryptToken(payload: string): string {
-  const [ivHex, tagHex, dataHex] = payload.split(":");
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(), Buffer.from(ivHex, "hex"));
-  decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-  return Buffer.concat([
-    decipher.update(Buffer.from(dataHex, "hex")),
-    decipher.final(),
-  ]).toString("utf8");
-}
+export const encryptToken = encrypt;
+export const decryptToken = decrypt;
 
 // ---- OAuth flow helpers ----------------------------------------------------
 

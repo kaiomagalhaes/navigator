@@ -10,6 +10,37 @@ import {
   seriesPrepSettings,
   todos,
 } from "./schema";
+import { decrypt } from "@/lib/crypto";
+import type { FathomTranscriptEntry } from "@/lib/fathom-meetings";
+
+// `summary` and `transcript` are stored encrypted (see src/lib/import-events.ts).
+// Decrypt them here so every consumer of a loaded recording sees plaintext — the
+// summary string and the parsed transcript array — just as before encryption.
+type EncryptedRecording = { summary: string | null; transcript: string | null };
+
+function decryptRecording<T extends EncryptedRecording>(
+  rec: T | null
+):
+  | (Omit<T, "summary" | "transcript"> & {
+      summary: string | null;
+      transcript: FathomTranscriptEntry[] | null;
+    })
+  | null {
+  if (!rec) return null;
+  return {
+    ...rec,
+    summary: rec.summary ? decrypt(rec.summary) : null,
+    transcript: rec.transcript
+      ? (JSON.parse(decrypt(rec.transcript)) as FathomTranscriptEntry[])
+      : null,
+  };
+}
+
+function withDecryptedRecording<E extends { fathomRecording: EncryptedRecording | null }>(
+  event: E
+) {
+  return { ...event, fathomRecording: decryptRecording(event.fathomRecording) };
+}
 
 // Connected Google accounts, without exposing stored tokens to callers/UI.
 export async function listGoogleAccounts() {
@@ -20,7 +51,7 @@ export async function listGoogleAccounts() {
 }
 
 export async function listEvents() {
-  return db.query.calendarEvents.findMany({
+  const rows = await db.query.calendarEvents.findMany({
     // Newest first (most recent / upcoming events at the top).
     orderBy: [desc(calendarEvents.startsAt)],
     with: {
@@ -28,6 +59,7 @@ export async function listEvents() {
       fathomRecording: true,
     },
   });
+  return rows.map(withDecryptedRecording);
 }
 
 // Stored events that start within [from, to), earliest first, with attendees.
@@ -101,11 +133,12 @@ export async function listRecentMeetingsWithPerson(
           event.name === series.name)
     )
     .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
-    .slice(0, limit);
+    .slice(0, limit)
+    .map(withDecryptedRecording);
 }
 
 export async function getEvent(id: string) {
-  return db.query.calendarEvents.findFirst({
+  const event = await db.query.calendarEvents.findFirst({
     where: eq(calendarEvents.id, id),
     with: {
       participants: {
@@ -118,6 +151,7 @@ export async function getEvent(id: string) {
       },
     },
   });
+  return event ? withDecryptedRecording(event) : undefined;
 }
 
 // To-dos assigned to any of the given people (matched by email), each with the
