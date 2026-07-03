@@ -7,6 +7,7 @@ import { getDaySync, listEventsForDay } from "@/db/queries";
 import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/lib/format";
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
+import { PrepareTodayOnce } from "@/components/prepare-today-once";
 
 // This page reads a day's agenda on every request (from the DB, falling back to
 // a live Google pull), so never cache it.
@@ -24,6 +25,8 @@ type AgendaEvent = {
   isAllDay: boolean;
   location: string | null;
   attendeeCount: number;
+  // Whether this meeting has a saved Prepare briefing (calendar_events.prep).
+  prepared: boolean;
 };
 
 type DayResult =
@@ -63,6 +66,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
           isAllDay: e.isAllDay,
           location: e.location,
           attendeeCount: e.participants.length,
+          prepared: e.prep != null,
         }))
       ),
     };
@@ -88,6 +92,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       isAllDay: e.isAllDay,
       location: e.location,
       attendeeCount: e.attendees.length,
+      prepared: false, // just pulled from Google; not prepared yet
     }));
 
     return { status: "ok", events: dedupe(events) };
@@ -177,10 +182,13 @@ export default async function Home({
             {isToday ? "Today's agenda" : "Agenda"}
           </h2>
           {result.status !== "no-accounts" && (
-            <DayLiveSync
-              dateKey={dateKey}
-              initialSyncedAt={daySync?.lastSyncedAt.toISOString() ?? null}
-            />
+            <div className="flex items-center gap-2">
+              <DayLiveSync
+                dateKey={dateKey}
+                initialSyncedAt={daySync?.lastSyncedAt.toISOString() ?? null}
+              />
+              <PrepareTodayOnce dateKey={dateKey} isToday={isToday} />
+            </div>
           )}
         </div>
         <DateNav date={dateKey} today={toDateParam(todayStart)} />
@@ -251,6 +259,11 @@ export default async function Home({
                     {!isNow && isNext && (
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${accent.chip}`}>
                         Up next
+                      </span>
+                    )}
+                    {event.prepared && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        <span aria-hidden>✓</span> Prepared
                       </span>
                     )}
                   </div>
