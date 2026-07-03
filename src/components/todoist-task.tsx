@@ -5,14 +5,23 @@ import { completeTodoistTask } from "@/app/actions";
 import type { TodoistTask } from "@/lib/todoist";
 import { MarkdownText } from "./markdown-text";
 
-// Todoist priority is 4 (urgent, "p1") … 1 (none). Give the top ones a colored
-// flag so urgent items read at a glance; lower ones get a plain checkbox.
-function priorityFlag(priority: number): string {
-  if (priority >= 4) return "text-rose-500";
-  if (priority === 3) return "text-amber-500";
-  if (priority === 2) return "text-sky-500";
-  return "text-zinc-400";
+// Todoist priority is 4 (urgent, "p1") … 1 (none). Color the checkbox by
+// priority so urgent items read at a glance.
+function priorityBorder(priority: number): string {
+  if (priority >= 4) return "border-rose-500";
+  if (priority === 3) return "border-amber-500";
+  if (priority === 2) return "border-sky-500";
+  return "border-zinc-400";
 }
+
+// The filled look once checked: solid in the same priority color.
+function priorityFill(priority: number): string {
+  if (priority >= 4) return "bg-rose-500 border-rose-500";
+  if (priority === 3) return "bg-amber-500 border-amber-500";
+  if (priority === 2) return "bg-sky-500 border-sky-500";
+  return "bg-zinc-400 border-zinc-400";
+}
+
 
 // A single Todoist task row. Clicking the checkbox completes it in Todoist via
 // a server action; the row is optimistically checked + faded, then the page
@@ -50,11 +59,11 @@ export function TodoistTaskItem({ task, today }: { task: TodoistTask; today: str
         disabled={done || pending}
         aria-label={`Mark "${task.content}" done in Todoist`}
         title="Mark done in Todoist"
-        className={`mt-0.5 shrink-0 leading-none ${priorityFlag(
-          task.priority
-        )} hover:opacity-70 disabled:cursor-default`}
+        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 text-xs font-bold leading-none text-white transition-all hover:border-green-500 hover:bg-green-500 disabled:cursor-default ${
+          done ? priorityFill(task.priority) : priorityBorder(task.priority)
+        }`}
       >
-        {done ? "☑" : "☐"}
+        {done ? "✓" : ""}
       </button>
       <div className={`min-w-0 flex-1 text-sm ${done ? "line-through" : ""}`}>
         <MarkdownText>{task.content}</MarkdownText>
