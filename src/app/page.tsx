@@ -8,6 +8,7 @@ import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
 import { PrepareTodayOnce } from "@/components/prepare-today-once";
+import { PrepareDayButton } from "@/components/prepare-day-button";
 
 // This page reads a day's agenda on every request (from the DB, falling back to
 // a live Google pull), so never cache it.
@@ -150,6 +151,7 @@ export default async function Home({
   const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
   const daySync = await getDaySync(dateKey);
+  const unpreparedCount = events.filter((e) => !e.prepared).length;
 
   // "Happening now" / "Up next" only make sense for today.
   const nextUp = isToday ? events.find((e) => !e.isAllDay && e.endsAt > now) : undefined;
@@ -188,6 +190,9 @@ export default async function Home({
                 initialSyncedAt={daySync?.lastSyncedAt.toISOString() ?? null}
               />
               <PrepareTodayOnce dateKey={dateKey} isToday={isToday} />
+              {!isToday && unpreparedCount > 0 && (
+                <PrepareDayButton dateKey={dateKey} count={unpreparedCount} />
+              )}
             </div>
           )}
         </div>
