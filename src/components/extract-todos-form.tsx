@@ -41,10 +41,14 @@ export function ExtractTodosForm({
     return () => clearInterval(id);
   }, [running, router]);
 
+  // Once to-dos have been extracted, hide the button — the results below stand
+  // on their own. Still offer it while idle-empty, or to retry after a failure.
+  const showButton = !running && (!hasTodos || status === "error");
+
   return (
     <form action={formAction} className="flex flex-col items-start gap-2">
       <input type="hidden" name="eventId" value={eventId} />
-      {running ? (
+      {running && (
         <span className="inline-flex items-center gap-2 rounded-lg bg-zinc-100 px-4 py-2 text-sm font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
           <span
             className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent"
@@ -52,9 +56,10 @@ export function ExtractTodosForm({
           />
           Extracting to-dos… this can take a minute.
         </span>
-      ) : (
+      )}
+      {showButton && (
         <SubmitButton pendingLabel="Starting…">
-          {hasTodos ? "Re-extract to-dos" : "Extract to-dos"}
+          {status === "error" ? "Try again" : "Extract to-dos"}
         </SubmitButton>
       )}
 
