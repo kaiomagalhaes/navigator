@@ -1,7 +1,11 @@
 "use client";
 
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { toDateParam } from "@/lib/format";
+
+// Where the last-picked day is remembered between visits.
+const STORAGE_KEY = "navigator:selected-date";
 
 // Shift a "YYYY-MM-DD" string by whole days, staying in local time.
 function shiftDay(date: string, days: number): string {
@@ -19,7 +23,30 @@ const btnClass =
 // param, keeping "/" canonical.
 export function DateNav({ date, today }: { date: string; today: string }) {
   const router = useRouter();
-  const go = (value: string) => router.push(value === today ? "/" : `/?date=${value}`);
+  const go = (value: string) => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, value);
+    } catch {
+      // Ignore storage failures (private mode, quota) — navigation still works.
+    }
+    router.push(value === today ? "/" : `/?date=${value}`);
+  };
+
+  // On a fresh load with no explicit day in the URL, restore the last one the
+  // user picked. Runs once on mount; in-app date changes update `date` without
+  // remounting, so this never fights an active navigation.
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = window.localStorage.getItem(STORAGE_KEY);
+    } catch {
+      // No storage access — nothing to restore.
+    }
+    if (stored && /^\d{4}-\d{2}-\d{2}$/.test(stored) && stored !== date) {
+      router.replace(stored === today ? "/" : `/?date=${stored}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="flex items-center gap-2">
