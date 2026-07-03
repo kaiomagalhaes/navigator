@@ -15,7 +15,11 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:migrate:deploy": "node scripts/migrate.mjs",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "_worker": "node --conditions=react-server --import tsx src/worker/daily-sync.ts",
+    "worker": "npm run _worker",
+    "worker:fathom": "npm run _worker -- fathom",
+    "worker:upcoming": "npm run _worker -- upcoming"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
@@ -25,7 +29,9 @@
     "openai": "^6.45.0",
     "pg": "^8.22.0",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "server-only": "^0.0.1",
+    "tsx": "^4.23.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
