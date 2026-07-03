@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { importCalendarRange } from "@/lib/import-events";
 import { syncDay } from "@/lib/day-sync";
 import { dayWindow, parseDayParam, toDateParam } from "@/lib/format";
+import { startWorkerRun, finishWorkerRun, failWorkerRun, type RunMode } from "@/lib/worker-runs";
 
 // Once-a-day job that keeps the data warm without anyone opening the app:
 //   1. Import the last 30 days of meetings and Fathom-link them — one day at a
@@ -55,27 +56,40 @@ async function backfillPastMeetings(): Promise<void> {
 }
 
 // Pull today through +7 days from Google (no Fathom), one day at a time.
-async function pullUpcomingMeetings(): Promise<void> {
+// Returns how many days actually changed.
+async function pullUpcomingMeetings(): Promise<number> {
+  let daysUpdated = 0;
   for (let offset = 0; offset <= UPCOMING_DAYS; offset++) {
     const { dayStart, dayEnd } = dayWindow(dayAtOffset(offset));
     const dateKey = toDateParam(dayStart);
     try {
       const res = await syncDay(dayStart, dayEnd, dateKey);
+      if (res.changed) daysUpdated++;
       console.log(`[worker:upcoming] day ${dateKey}: ${res.changed ? "updated" : "no change"}`);
     } catch (err) {
       console.error(`[worker:upcoming] day ${dateKey} failed`, err);
     }
   }
+  return daysUpdated;
 }
 
 // `fathom` → past only, `upcoming` → upcoming only, otherwise both (past first).
 async function main(): Promise<void> {
-  const mode = process.argv[2];
+  const arg = process.argv[2];
+  const mode: RunMode = arg === "fathom" || arg === "upcoming" ? arg : "all";
   const startedAt = Date.now();
-  console.log(`[worker] starting mode="${mode ?? "all"}"`);
+  console.log(`[worker] starting mode="${mode}"`);
 
-  if (mode !== "upcoming") await backfillPastMeetings();
-  if (mode !== "fathom") await pullUpcomingMeetings();
+  // Record the run so the Activity page reflects that we ran and what changed.
+  const run = await startWorkerRun(mode);
+  try {
+    if (mode !== "upcoming") await backfillPastMeetings();
+    const daysUpdated = mode !== "fathom" ? await pullUpcomingMeetings() : 0;
+    await finishWorkerRun(run.id, run.startedAt, { daysUpdated });
+  } catch (err) {
+    await failWorkerRun(run.id, err instanceof Error ? err.message : String(err));
+    throw err;
+  }
 
   console.log(`[worker] done in ${Math.round((Date.now() - startedAt) / 1000)}s`);
 }

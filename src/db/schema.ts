@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb, boolean, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, timestamp, jsonb, boolean, integer, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 
 // A connected Google account whose calendar we import from. Tokens are stored
@@ -121,7 +121,31 @@ export const fathomRecordings = pgTable("fathom_recordings", {
   summary: text("summary"), // encrypted default_summary.markdown_formatted
   transcript: text("transcript"), // encrypted JSON of FathomTranscriptEntry[]
   scheduledStartTime: timestamp("scheduled_start_time", { withTimezone: true }),
+  // First time this recording was linked. Unlike syncedAt (bumped on every
+  // re-link), this stays put — so a worker run can tell newly-linked from
+  // already-linked recordings.
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   syncedAt: timestamp("synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// One row per worker run (see src/worker/daily-sync.ts). Records when it ran,
+// what it did, and the specific events it added / Fathom-linked, so the Activity
+// page can show that everything is up to date and what changed each run.
+export const workerRuns = pgTable("worker_runs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  // "all" | "fathom" | "upcoming" — which slice of the job ran.
+  mode: text("mode").notNull(),
+  // "running" | "success" | "error".
+  status: text("status").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+  eventsAdded: integer("events_added").notNull().default(0),
+  fathomLinked: integer("fathom_linked").notNull().default(0),
+  daysUpdated: integer("days_updated").notNull().default(0),
+  error: text("error"),
+  // WorkerRunDetails (see src/lib/worker-runs.ts): the added events and the
+  // events newly linked to Fathom, for the run's expandable result list.
+  details: jsonb("details"),
 });
 
 // Action items extracted from an event's transcript by the LLM. Tied to the
@@ -205,5 +229,6 @@ export type EventParticipant = typeof eventParticipants.$inferSelect;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
 export type FathomRecording = typeof fathomRecordings.$inferSelect;
 export type Todo = typeof todos.$inferSelect;
+export type WorkerRun = typeof workerRuns.$inferSelect;
 export type DaySync = typeof daySyncs.$inferSelect;
 export type SeriesPrepSettings = typeof seriesPrepSettings.$inferSelect;

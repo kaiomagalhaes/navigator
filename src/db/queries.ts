@@ -9,6 +9,7 @@ import {
   persons,
   seriesPrepSettings,
   todos,
+  workerRuns,
 } from "./schema";
 import { decrypt } from "@/lib/crypto";
 import type { FathomTranscriptEntry } from "@/lib/fathom-meetings";
@@ -92,6 +93,14 @@ export async function isSeriesSkipped(recurringEventId: string): Promise<boolean
     columns: { skipPrep: true },
   });
   return row?.skipPrep ?? false;
+}
+
+// Recent worker runs, newest first — powers the Activity page.
+export async function listWorkerRuns(limit = 25) {
+  return db.query.workerRuns.findMany({
+    orderBy: [desc(workerRuns.startedAt)],
+    limit,
+  });
 }
 
 // The last time a given day (local "YYYY-MM-DD") was synced from Google, or

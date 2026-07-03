@@ -53,6 +53,9 @@ export default async function RootLayout({
                 <Link href="/calendars" className="hover:text-zinc-900 dark:hover:text-zinc-100">
                   Calendars
                 </Link>
+                <Link href="/activity" className="hover:text-zinc-900 dark:hover:text-zinc-100">
+                  Activity
+                </Link>
               </div>
               <div className="ml-auto flex items-center gap-3 text-sm text-zinc-500 dark:text-zinc-400">
                 <span className="hidden sm:inline">{session.user?.email}</span>
