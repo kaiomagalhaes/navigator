@@ -1,0 +1,1 @@
+ALTER TABLE "worker_runs" ADD COLUMN "progress" jsonb;

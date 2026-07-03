@@ -1,6 +1,7 @@
 import { listWorkerRuns } from "@/db/queries";
 import { formatDateTime, formatDate } from "@/lib/format";
-import type { WorkerRunDetails } from "@/lib/worker-runs";
+import type { WorkerRunDetails, WorkerRunProgress } from "@/lib/worker-runs";
+import { SyncNowButton } from "@/components/sync-now-button";
 
 // Reads the run log on every request.
 export const dynamic = "force-dynamic";
@@ -9,6 +10,11 @@ const MODE_LABEL: Record<string, string> = {
   all: "Full sync",
   fathom: "Past + Fathom",
   upcoming: "Upcoming days",
+};
+
+const PHASE_LABEL: Record<string, string> = {
+  backfill: "Backfilling past meetings + Fathom",
+  upcoming: "Pulling upcoming days",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -26,14 +32,23 @@ function duration(startedAt: Date, finishedAt: Date | null): string | null {
 
 export default async function ActivityPage() {
   const runs = await listWorkerRuns();
+  // A run is "in flight" only if it's recent — a crashed run left as "running"
+  // shouldn't disable the button or poll forever.
+  const nowMs = new Date().getTime();
+  const running = runs.some(
+    (r) => r.status === "running" && nowMs - r.startedAt.getTime() < 30 * 60 * 1000
+  );
 
   return (
     <div className="flex flex-col gap-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Each time the sync worker runs, what it added and Fathom-linked.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
+          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
+            Each time the sync worker ran — what it added and Fathom-linked.
+          </p>
+        </div>
+        <SyncNowButton running={running} />
       </div>
 
       {runs.length === 0 ? (
@@ -47,6 +62,8 @@ export default async function ActivityPage() {
               addedEvents: [],
               fathomEvents: [],
             };
+            const progress =
+              run.status === "running" ? (run.progress as WorkerRunProgress | null) : null;
             const dur = duration(run.startedAt, run.finishedAt);
             return (
               <li
@@ -66,11 +83,39 @@ export default async function ActivityPage() {
                   {dur && <span className="text-xs text-zinc-400">· {dur}</span>}
                 </div>
 
-                <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-                  {run.eventsAdded} event{run.eventsAdded === 1 ? "" : "s"} added ·{" "}
-                  {run.fathomLinked} Fathom-linked · {run.daysUpdated} day
-                  {run.daysUpdated === 1 ? "" : "s"} updated
-                </p>
+                {run.status === "running" ? (
+                  <div className="mt-2 flex flex-col gap-1 text-sm text-zinc-600 dark:text-zinc-400">
+                    <p>{progress?.phase ? PHASE_LABEL[progress.phase] : "Starting…"}</p>
+                    {progress?.currentDay && (
+                      <p className="flex items-center gap-2">
+                        <span
+                          className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-400 border-t-transparent"
+                          aria-hidden
+                        />
+                        Currently syncing <span className="font-medium">{progress.currentDay}</span>
+                      </p>
+                    )}
+                    {progress && progress.completedDays.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer font-medium text-zinc-700 dark:text-zinc-300">
+                          {progress.completedDays.length} day
+                          {progress.completedDays.length === 1 ? "" : "s"} done
+                        </summary>
+                        <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-zinc-500">
+                          {progress.completedDays.map((d) => (
+                            <li key={d}>{d}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
+                    {run.eventsAdded} event{run.eventsAdded === 1 ? "" : "s"} added ·{" "}
+                    {run.fathomLinked} Fathom-linked · {run.daysUpdated} day
+                    {run.daysUpdated === 1 ? "" : "s"} updated
+                  </p>
+                )}
 
                 {run.status === "error" && run.error && (
                   <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950/40 dark:text-red-300">

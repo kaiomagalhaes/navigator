@@ -12,6 +12,25 @@ export type WorkerRunDetails = {
   fathomEvents: { name: string; startsAt: string | null }[];
 };
 
+// Live progress while a run is in flight, polled by the Activity page.
+export type WorkerRunProgress = {
+  phase: "backfill" | "upcoming" | null;
+  currentDay: string | null; // the day (YYYY-MM-DD) processing right now
+  completedDays: string[]; // days finished so far, in order
+};
+
+// Best-effort progress update (a failed write must never fail the sync).
+export async function updateWorkerRunProgress(
+  id: string,
+  progress: WorkerRunProgress
+): Promise<void> {
+  try {
+    await db.update(workerRuns).set({ progress }).where(eq(workerRuns.id, id));
+  } catch (err) {
+    console.error("[worker] progress update failed", err);
+  }
+}
+
 // Open a run record before any work starts. Its startedAt is the cut-off we use
 // afterward to attribute newly-created rows to this run.
 export async function startWorkerRun(mode: RunMode): Promise<{ id: string; startedAt: Date }> {
@@ -61,6 +80,7 @@ export async function finishWorkerRun(
       fathomLinked: linked.length,
       daysUpdated: extra.daysUpdated,
       details,
+      progress: null,
     })
     .where(eq(workerRuns.id, id));
 }
@@ -69,6 +89,6 @@ export async function finishWorkerRun(
 export async function failWorkerRun(id: string, error: string): Promise<void> {
   await db
     .update(workerRuns)
-    .set({ status: "error", finishedAt: new Date(), error })
+    .set({ status: "error", finishedAt: new Date(), error, progress: null })
     .where(eq(workerRuns.id, id));
 }

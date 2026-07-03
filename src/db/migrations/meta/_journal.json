@@ -120,6 +120,13 @@
       "when": 1783099813150,
       "tag": "0016_lame_texas_twister",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1783102754820,
+      "tag": "0017_chief_red_shift",
+      "breakpoints": true
     }
   ]
 }

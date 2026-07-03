@@ -2,9 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, gt } from "drizzle-orm";
 import { db } from "@/db";
-import { calendarEvents, googleAccounts, seriesPrepSettings, todos } from "@/db/schema";
+import { calendarEvents, googleAccounts, seriesPrepSettings, todos, workerRuns } from "@/db/schema";
+import { startWorkerRun } from "@/lib/worker-runs";
+import { runSync } from "@/lib/worker";
 import { getEvent } from "@/db/queries";
 import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
@@ -196,6 +198,37 @@ export async function extractEventTodos(
     revalidatePath(`/events/${event.id}`);
   });
 
+  return { started: true };
+}
+
+// ---- Manual sync run -------------------------------------------------------
+
+export type SyncRunState = { started?: boolean; alreadyRunning?: boolean; error?: string };
+
+// Kick off a full sync run from the Activity page's "Run sync now" button. The
+// job is long (30-day Fathom backfill), so it runs in the background via `after`
+// and records a worker_runs row the page polls; the request returns immediately.
+export async function triggerSyncRun(
+  _prev: SyncRunState,
+  _formData: FormData
+): Promise<SyncRunState> {
+  // Don't stack a second run on one already in flight — but ignore stale
+  // "running" rows (>30 min old), so a crashed run can't block forever.
+  const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+  const active = await db.query.workerRuns.findFirst({
+    where: and(eq(workerRuns.status, "running"), gt(workerRuns.startedAt, cutoff)),
+  });
+  if (active) return { alreadyRunning: true };
+
+  const run = await startWorkerRun("all");
+  revalidatePath("/activity");
+  after(async () => {
+    try {
+      await runSync("all", run);
+    } catch (err) {
+      console.error("[triggerSyncRun]", err);
+    }
+  });
   return { started: true };
 }
 

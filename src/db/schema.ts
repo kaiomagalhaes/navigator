@@ -146,6 +146,10 @@ export const workerRuns = pgTable("worker_runs", {
   // WorkerRunDetails (see src/lib/worker-runs.ts): the added events and the
   // events newly linked to Fathom, for the run's expandable result list.
   details: jsonb("details"),
+  // WorkerRunProgress (see src/lib/worker-runs.ts): live progress while
+  // status = "running" — the phase/day processing now and the days done so far.
+  // Cleared when the run finishes.
+  progress: jsonb("progress"),
 });
 
 // Action items extracted from an event's transcript by the LLM. Tied to the
