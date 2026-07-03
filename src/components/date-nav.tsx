@@ -50,6 +50,15 @@ export function DateNav({ date, today }: { date: string; today: string }) {
 
   return (
     <div className="flex items-center gap-2">
+      {date !== today && (
+        <button
+          type="button"
+          className="mr-1 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+          onClick={() => go(today)}
+        >
+          Today
+        </button>
+      )}
       <button type="button" aria-label="Previous day" className={btnClass} onClick={() => go(shiftDay(date, -1))}>
         ‹
       </button>
@@ -65,15 +74,6 @@ export function DateNav({ date, today }: { date: string; today: string }) {
       <button type="button" aria-label="Next day" className={btnClass} onClick={() => go(shiftDay(date, 1))}>
         ›
       </button>
-      {date !== today && (
-        <button
-          type="button"
-          className="ml-1 rounded-lg px-3 py-1.5 text-sm font-medium text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-          onClick={() => go(today)}
-        >
-          Today
-        </button>
-      )}
     </div>
   );
 }
