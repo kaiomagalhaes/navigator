@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
 import { googleAccounts } from "@/db/schema";
+import { auth } from "@/auth";
 import { encryptToken, exchangeCodeForAccount } from "@/lib/google";
 
 function backTo(request: NextRequest, params: Record<string, string>) {
@@ -10,6 +11,11 @@ function backTo(request: NextRequest, params: Record<string, string>) {
 }
 
 export async function GET(request: NextRequest) {
+  // Defense in depth behind the proxy: only a signed-in user may connect a calendar.
+  if (!(await auth())) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const { searchParams } = request.nextUrl;
   const code = searchParams.get("code");
   const state = searchParams.get("state");

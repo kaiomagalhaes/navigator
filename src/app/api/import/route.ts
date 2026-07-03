@@ -1,6 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
 import { db } from "@/db";
+import { auth } from "@/auth";
 import { importCalendarRange } from "@/lib/import-events";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,11 @@ export const dynamic = "force-dynamic";
 // auto-links each to its Fathom recording (when one exists). Idempotent: safe
 // to call repeatedly for the same window — events are upserted, not duplicated.
 export async function GET(request: NextRequest) {
+  // Defense in depth: the proxy already gates this, but never trust that alone.
+  if (!(await auth())) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const { searchParams } = request.nextUrl;
   const fromRaw = searchParams.get("from") ?? "";
   const toRaw = searchParams.get("to") ?? "";
