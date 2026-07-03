@@ -48,3 +48,22 @@ export function toDateParam(value: Date): string {
   const d = String(value.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+// Local midnight for a "YYYY-MM-DD" param; today's local midnight when the param
+// is missing or malformed. Shared by the home page and the day-sync route so
+// both compute the exact same local-day window.
+export function parseDayParam(value: string | undefined): Date {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const m = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  if (!m) return today;
+  const parsed = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(parsed.getTime()) ? today : parsed;
+}
+
+// The [start, end) local-day window for a day's midnight.
+export function dayWindow(dayStart: Date): { dayStart: Date; dayEnd: Date } {
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayStart.getDate() + 1);
+  return { dayStart, dayEnd };
+}

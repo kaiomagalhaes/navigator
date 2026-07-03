@@ -1,7 +1,7 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "./index";
-import { calendarEvents, eventParticipants, googleAccounts, persons, todos } from "./schema";
+import { calendarEvents, daySyncs, eventParticipants, googleAccounts, persons, todos } from "./schema";
 
 // Connected Google accounts, without exposing stored tokens to callers/UI.
 export async function listGoogleAccounts() {
@@ -33,6 +33,12 @@ export async function listEventsForDay(from: Date, to: Date) {
       participants: { with: { person: true } },
     },
   });
+}
+
+// The last time a given day (local "YYYY-MM-DD") was synced from Google, or
+// null if it has never been synced. Powers the home page's "Last updated at".
+export async function getDaySync(date: string) {
+  return db.query.daySyncs.findFirst({ where: eq(daySyncs.date, date) });
 }
 
 // The most recent past meetings a given person took part in, newest first,

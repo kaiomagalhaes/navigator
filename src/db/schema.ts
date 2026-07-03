@@ -47,6 +47,14 @@ export const calendarEvents = pgTable(
   ]
 );
 
+// One row per calendar day (local "YYYY-MM-DD"), recording the last time we
+// pulled that day's meetings from Google. Powers the home page's "Last updated
+// at" indicator and its per-minute background refresh (see src/lib/day-sync.ts).
+export const daySyncs = pgTable("day_syncs", {
+  date: text("date").primaryKey(),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const persons = pgTable("persons", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -169,3 +177,4 @@ export type EventParticipant = typeof eventParticipants.$inferSelect;
 export type GoogleAccount = typeof googleAccounts.$inferSelect;
 export type FathomRecording = typeof fathomRecordings.$inferSelect;
 export type Todo = typeof todos.$inferSelect;
+export type DaySync = typeof daySyncs.$inferSelect;

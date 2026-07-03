@@ -3,9 +3,10 @@ import { db } from "@/db";
 import { getAuthedClient } from "@/lib/google";
 import { fetchDayEvents } from "@/lib/google-calendar";
 import { persistEvents } from "@/lib/events-store";
-import { listEventsForDay } from "@/db/queries";
-import { formatTime, formatDay, toDateParam } from "@/lib/format";
+import { getDaySync, listEventsForDay } from "@/db/queries";
+import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/lib/format";
 import { DateNav } from "@/components/date-nav";
+import { DayLiveSync } from "@/components/day-live-sync";
 
 // This page reads a day's agenda on every request (from the DB, falling back to
 // a live Google pull), so never cache it.
@@ -96,17 +97,6 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
   }
 }
 
-// Local midnight for a "YYYY-MM-DD" param; today's local midnight when the param
-// is missing or malformed.
-function parseDay(value: string | undefined): Date {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const m = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
-  if (!m) return today;
-  const parsed = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-  return Number.isNaN(parsed.getTime()) ? today : parsed;
-}
-
 function greeting(hour: number): { text: string; emoji: string } {
   if (hour < 12) return { text: "Good morning", emoji: "☀️" };
   if (hour < 18) return { text: "Good afternoon", emoji: "🌤️" };
@@ -145,9 +135,8 @@ export default async function Home({
   const { date } = await searchParams;
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayStart = parseDay(date);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayStart.getDate() + 1);
+  const { dayStart, dayEnd } = dayWindow(parseDayParam(date));
+  const dateKey = toDateParam(dayStart);
 
   const dayDiff = Math.round((dayStart.getTime() - todayStart.getTime()) / 86_400_000);
   const tense: Tense = dayDiff === 0 ? "today" : dayDiff < 0 ? "past" : "future";
@@ -155,6 +144,7 @@ export default async function Home({
 
   const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
+  const daySync = await getDaySync(dateKey);
 
   // "Happening now" / "Up next" only make sense for today.
   const nextUp = isToday ? events.find((e) => !e.isAllDay && e.endsAt > now) : undefined;
@@ -182,10 +172,18 @@ export default async function Home({
 
       {/* Day selector */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          {isToday ? "Today's agenda" : "Agenda"}
-        </h2>
-        <DateNav date={toDateParam(dayStart)} today={toDateParam(todayStart)} />
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-sm font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+            {isToday ? "Today's agenda" : "Agenda"}
+          </h2>
+          {result.status !== "no-accounts" && (
+            <DayLiveSync
+              dateKey={dateKey}
+              initialSyncedAt={daySync?.lastSyncedAt.toISOString() ?? null}
+            />
+          )}
+        </div>
+        <DateNav date={dateKey} today={toDateParam(todayStart)} />
       </div>
 
       {result.status === "no-accounts" && (
