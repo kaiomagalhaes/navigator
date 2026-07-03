@@ -32,6 +32,10 @@ type AgendaEvent = {
   recurring: boolean;
   // Whether this meeting's recurring series is marked "skip auto-prep".
   skipPrep: boolean;
+  // Which connected calendar(s) this meeting came from, as short labels derived
+  // from the account email (e.g. "Codelitt", "Carboncrei"). Usually one; a
+  // meeting shared across both accounts carries both. Empty for manual events.
+  calendars: string[];
 };
 
 type DayResult =
@@ -43,11 +47,27 @@ type DayResult =
 // present, else its own row id (manual events never collide).
 const eventKey = (e: AgendaEvent) => e.googleEventId ?? e.id;
 
+// Short calendar label from an account email, e.g. "kaio@codelitt.com" →
+// "Codelitt". Null for manual events (no account) or unparseable emails.
+function calendarLabel(email: string | null | undefined): string | null {
+  const domain = email?.split("@")[1]?.split(".")[0];
+  if (!domain) return null;
+  return domain.charAt(0).toUpperCase() + domain.slice(1);
+}
+
+// Collapse the same meeting shared across calendars into one row, merging the
+// calendar labels so a meeting on both accounts shows both marks.
 function dedupe(events: AgendaEvent[]): AgendaEvent[] {
-  const seen = new Set<string>();
-  return events
-    .filter((e) => (seen.has(eventKey(e)) ? false : seen.add(eventKey(e))))
-    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  const byKey = new Map<string, AgendaEvent>();
+  for (const e of events) {
+    const existing = byKey.get(eventKey(e));
+    if (existing) {
+      existing.calendars = Array.from(new Set([...existing.calendars, ...e.calendars])).sort();
+    } else {
+      byKey.set(eventKey(e), { ...e, calendars: [...e.calendars] });
+    }
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 }
 
 // Load the agenda for [dayStart, dayEnd). DB-first: show events already stored
@@ -56,6 +76,13 @@ function dedupe(events: AgendaEvent[]): AgendaEvent[] {
 async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
   const accounts = await db.query.googleAccounts.findMany();
   if (accounts.length === 0) return { status: "no-accounts" };
+
+  // account id → calendar label, so each event can be marked with its calendar.
+  const labelByAccount = new Map(accounts.map((a) => [a.id, calendarLabel(a.email)]));
+  const calendarsFor = (accountId: string | null): string[] => {
+    const label = accountId != null ? labelByAccount.get(accountId) : null;
+    return label ? [label] : [];
+  };
 
   // Recurring series marked "skip auto-prep" — used to flag agenda rows.
   const skipped = await listSkippedSeriesIds();
@@ -79,6 +106,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
           prepared: e.prep != null,
           recurring: e.recurringEventId != null,
           skipPrep: isSkipped(e.recurringEventId),
+          calendars: calendarsFor(e.accountId),
         }))
       ),
     };
@@ -91,7 +119,8 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       accounts.map(async (account) => {
         const auth = await getAuthedClient(account);
         const events = await fetchDayEvents(auth, dayStart, dayEnd);
-        return persistEvents(account.id, events);
+        const stored = await persistEvents(account.id, events);
+        return stored.map((e) => ({ ...e, calendars: calendarsFor(account.id) }));
       })
     );
 
@@ -107,6 +136,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       prepared: false, // just pulled from Google; not prepared yet
       recurring: e.recurringEventId != null,
       skipPrep: isSkipped(e.recurringEventId),
+      calendars: e.calendars,
     }));
 
     return { status: "ok", events: dedupe(events) };
@@ -137,6 +167,14 @@ function eventEmoji(name: string): string {
   if (/gym|workout|run|yoga/.test(n)) return "🏃";
   return "📌";
 }
+
+// Per-calendar chip colors so each account reads at a glance. Unknown calendars
+// fall back to a neutral chip.
+const CALENDAR_STYLES: Record<string, string> = {
+  Codelitt: "bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300",
+  Carboncrei: "bg-teal-100 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300",
+};
+const CALENDAR_FALLBACK = "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300";
 
 const ACCENTS = [
   { bar: "bg-rose-400", chip: "bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300" },
@@ -271,6 +309,15 @@ export default async function Home({
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="truncate font-semibold">{event.name}</h2>
+                    {event.calendars.map((cal) => (
+                      <span
+                        key={cal}
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${CALENDAR_STYLES[cal] ?? CALENDAR_FALLBACK}`}
+                        title={`From your ${cal} calendar`}
+                      >
+                        <span aria-hidden>●</span> {cal}
+                      </span>
+                    ))}
                     {isNow && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-950 dark:text-green-400">
                         <span aria-hidden>🔴</span> Happening now
