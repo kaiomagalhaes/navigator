@@ -4,6 +4,6 @@ build:
 release:
   image: web
   command:
-    - npm run db:migrate
+    - npm run db:migrate:deploy
 run:
   web: npm run start
