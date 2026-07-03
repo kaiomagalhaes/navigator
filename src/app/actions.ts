@@ -9,6 +9,8 @@ import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
 import { importCalendarRange, linkFathomRecording } from "@/lib/import-events";
 import { regenerateEventTodos } from "@/lib/todos";
+import { coachMeeting, type CoachTodo, type MeetingCoaching } from "@/lib/meeting-coach";
+import { isMe } from "@/lib/me";
 import { completeTask, createTask, primaryProjectId, TodoistApiError } from "@/lib/todoist";
 
 // Events, people, and participants are sourced exclusively from the Google
@@ -193,7 +195,9 @@ export type PrepItem = {
   text: string;
   meetingId: string;
   meetingName: string;
-  meetingDate: Date;
+  // Date when freshly generated; an ISO string once round-tripped through the
+  // stored jsonb. formatDate() handles both.
+  meetingDate: Date | string;
   copied: boolean; // already sent to Todoist
 };
 
@@ -205,7 +209,33 @@ export type PrepGroup = {
 };
 
 // `extracted` is how many past meetings we had to extract to-dos from on the fly.
-export type PrepareState = { error?: string; ran?: boolean; extracted?: number; groups?: PrepGroup[] };
+// `coaching` is the AI prep briefing; `coachingError` is set (with groups still
+// returned) when the coaching call fails but the item gathering succeeded.
+export type PrepareState = {
+  error?: string;
+  ran?: boolean;
+  extracted?: number;
+  groups?: PrepGroup[];
+  coaching?: MeetingCoaching;
+  coachingError?: string;
+};
+
+// The Prepare result as persisted on calendar_events.prep and re-rendered on the
+// event page. Dates inside `groups` are ISO strings after the jsonb round-trip.
+export type StoredPrep = {
+  generatedAt: string;
+  extracted: number;
+  groups: PrepGroup[];
+  coaching?: MeetingCoaching;
+  coachingError?: string;
+};
+
+// Persist a Prepare result to the event and refresh the page so the stored
+// briefing replaces the "Prepare" button.
+async function storePrep(eventId: string, prep: StoredPrep): Promise<void> {
+  await db.update(calendarEvents).set({ prep }).where(eq(calendarEvents.id, eventId));
+  revalidatePath(`/events/${eventId}`);
+}
 
 // Prep for an upcoming meeting: for each attendee, look at their last 3 past
 // meetings, extract to-dos from any that have a transcript but weren't extracted
@@ -236,6 +266,7 @@ export async function prepareMeeting(
   const attendeeEmails = new Set(current.participants.map((p) => p.person.email.toLowerCase()));
   if (attendeeEmails.size === 0) {
     console.log(`[prepareMeeting] no attendees on "${current.name}" — nothing to prepare`);
+    await storePrep(eventId, { generatedAt: new Date().toISOString(), extracted: 0, groups: [] });
     return { ran: true, extracted: 0, groups: [] };
   }
 
@@ -255,6 +286,7 @@ export async function prepareMeeting(
   );
   if (meetingIds.size === 0) {
     console.log(`[prepareMeeting] done in ${Date.now() - startedAt}ms — no history with these people`);
+    await storePrep(eventId, { generatedAt: new Date().toISOString(), extracted: 0, groups: [] });
     return { ran: true, extracted: 0, groups: [] };
   }
 
@@ -324,17 +356,67 @@ export async function prepareMeeting(
     }
   }
 
+  // Coach the user through the meeting from the gathered items (best-effort: a
+  // coaching failure still returns the item list). Skip when there's nothing to
+  // work from.
+  let coaching: MeetingCoaching | undefined;
+  let coachingError: string | undefined;
+  if (itemCount > 0) {
+    const myItems: CoachTodo[] = [];
+    const othersItems: (CoachTodo & { person: string })[] = [];
+    for (const group of groups.values()) {
+      const mine = isMe(group.email);
+      for (const item of group.items) {
+        const todo: CoachTodo = {
+          text: item.text,
+          sourceMeeting: item.meetingName,
+          sentToTodoist: item.copied,
+        };
+        if (mine) myItems.push(todo);
+        else othersItems.push({ ...todo, person: group.name });
+      }
+    }
+
+    console.log(
+      `[prepareMeeting] coaching: asking AI (${myItems.length} of mine, ${othersItems.length} others')…`
+    );
+    const at = Date.now();
+    try {
+      coaching = await coachMeeting({
+        meetingName: current.name,
+        meetingDate: current.startsAt.toISOString().slice(0, 10),
+        attendees: current.participants.map((p) => ({
+          name: p.person.name,
+          isMe: isMe(p.person.email),
+        })),
+        myItems,
+        othersItems,
+      });
+      console.log(
+        `[prepareMeeting] coaching: ${coaching.topics.length} topic(s), ${coaching.myOpenItems.length} open item(s), ` +
+          `${coaching.anticipatedQuestions.length} anticipated question(s) in ${Date.now() - at}ms`
+      );
+    } catch (err) {
+      console.error(`[prepareMeeting] coaching failed after ${Date.now() - at}ms:`, err);
+      coachingError = describeOpenAiError(err);
+    }
+  }
+
   console.log(
     `[prepareMeeting] done in ${Date.now() - startedAt}ms — ${extracted} meeting(s) extracted, ` +
       `${itemCount} item(s) across ${groups.size} of ${current.participants.length} attendee(s)`
   );
 
-  revalidatePath(`/events/${eventId}`);
-  return {
-    ran: true,
+  const sortedGroups = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name));
+  await storePrep(eventId, {
+    generatedAt: new Date().toISOString(),
     extracted,
-    groups: [...groups.values()].sort((a, b) => a.name.localeCompare(b.name)),
-  };
+    groups: sortedGroups,
+    coaching,
+    coachingError,
+  });
+
+  return { ran: true, extracted, groups: sortedGroups, coaching, coachingError };
 }
 
 // ---- Todoist -------------------------------------------------------------

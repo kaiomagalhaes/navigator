@@ -35,6 +35,10 @@ export const calendarEvents = pgTable(
     // meeting prep tell "not extracted yet" from "extracted, but zero to-dos" so
     // it doesn't re-run the LLM on every "Prepare".
     todosExtractedAt: timestamp("todos_extracted_at", { withTimezone: true }),
+    // The saved "Prepare" result (gathered action items + AI coaching). Set once
+    // you click Prepare on an upcoming meeting; its presence hides the button and
+    // shows the stored briefing instead. Shape: StoredPrep in src/app/actions.ts.
+    prep: jsonb("prep"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [

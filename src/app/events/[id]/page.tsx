@@ -4,6 +4,8 @@ import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
 import { MeetingPrep } from "@/components/meeting-prep";
+import { PrepResults } from "@/components/prep-results";
+import type { StoredPrep } from "@/app/actions";
 import { ExtractTodosForm } from "@/components/extract-todos-form";
 import { TranscriptViewer } from "@/components/transcript-viewer";
 import { MeetingTodo } from "@/components/meeting-todo";
@@ -123,7 +125,21 @@ export default async function EventDetailPage({
         </div>
       </dl>
 
-      {isUpcoming && <MeetingPrep eventId={event.id} />}
+      {event.prep ? (
+        <section className="flex flex-col gap-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-lg font-medium">Meeting prep</h2>
+            {(event.prep as StoredPrep).generatedAt && (
+              <span className="text-xs text-zinc-500">
+                Prepared {formatDate((event.prep as StoredPrep).generatedAt)}
+              </span>
+            )}
+          </div>
+          <PrepResults data={event.prep as StoredPrep} />
+        </section>
+      ) : (
+        isUpcoming && <MeetingPrep eventId={event.id} />
+      )}
 
       {recording && (
         <section className="flex flex-col gap-4">
