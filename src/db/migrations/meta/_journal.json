@@ -85,6 +85,13 @@
       "when": 1783086419832,
       "tag": "0011_small_doorman",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1783086904006,
+      "tag": "0012_striped_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

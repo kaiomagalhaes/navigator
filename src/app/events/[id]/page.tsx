@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getEvent, listRecentMeetingsWithPerson } from "@/db/queries";
+import { getEvent, listRecentMeetingsWithPerson, isSeriesSkipped } from "@/db/queries";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { FathomSyncForm } from "@/components/fathom-sync-form";
 import { MeetingPrep } from "@/components/meeting-prep";
 import { PrepResults } from "@/components/prep-results";
+import { SeriesPrepToggle } from "@/components/series-prep-toggle";
 import type { StoredPrep } from "@/lib/prepare";
 import { ExtractTodosForm } from "@/components/extract-todos-form";
 import { TranscriptViewer } from "@/components/transcript-viewer";
@@ -36,15 +37,42 @@ export default async function EventDetailPage({
     .filter(({ person }) => !isMe(person.email))
     .sort((a, b) => a.person.name.localeCompare(b.person.name));
 
-  // For each attendee, the last few meetings we've had with them (this event
-  // excluded), so you can jump straight into the recent history / transcripts.
+  // The exact history prep draws on for this meeting: for a recurring meeting,
+  // prior occurrences of the same series (matched by id or name); for a one-off,
+  // the attendee's last few meetings. Mirrors generatePrep in src/lib/prepare.ts
+  // so we can flag which recent meetings actually feed the prep.
+  const prepSeries = event.recurringEventId
+    ? { id: event.recurringEventId, name: event.name }
+    : null;
+
+  // For each attendee: the last few meetings we've had with them (this event
+  // excluded) merged with the prep-considered set (which, for a recurring
+  // meeting, may reach further back than the last 3), newest first. Each entry
+  // is flagged `usedInPrep` so the UI can highlight what fed the prep.
   const recentByPerson = await Promise.all(
-    participants.map(({ person }) => listRecentMeetingsWithPerson(person.id, event.id))
+    participants.map(async ({ person }) => {
+      const recent = await listRecentMeetingsWithPerson(person.id, event.id, 3);
+      const considered = prepSeries
+        ? await listRecentMeetingsWithPerson(person.id, event.id, 3, prepSeries)
+        : recent; // one-off: prep uses the same last-3 as shown
+      const prepIds = new Set(considered.map((m) => m.id));
+      const byId = new Map<string, (typeof recent)[number]>();
+      for (const m of [...recent, ...considered]) byId.set(m.id, m);
+      return [...byId.values()]
+        .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
+        .map((meeting) => ({ meeting, usedInPrep: prepIds.has(meeting.id) }));
+    })
   );
 
   // Fathom only has recordings for meetings that have already happened, so the
   // "Sync with Fathom" action makes no sense for an event still in the future.
   const isUpcoming = event.startsAt > new Date();
+
+  // Recurring meetings can be marked "skip auto-prep" (per series). Only load
+  // the flag for recurring events; one-off events have no series to skip.
+  const seriesSkipped = event.recurringEventId
+    ? await isSeriesSkipped(event.recurringEventId)
+    : false;
 
   const recording = event.fathomRecording;
   const transcript = (recording?.transcript ?? null) as FathomTranscriptEntry[] | null;
@@ -124,6 +152,13 @@ export default async function EventDetailPage({
           <dd className="mt-1 font-medium">{formatDateTime(event.endsAt)}</dd>
         </div>
       </dl>
+
+      {event.recurringEventId && (
+        <SeriesPrepToggle
+          recurringEventId={event.recurringEventId}
+          initialSkip={seriesSkipped}
+        />
+      )}
 
       {event.prep ? (
         <section className="flex flex-col gap-4">
@@ -246,9 +281,7 @@ export default async function EventDetailPage({
 
                   <div className="mt-3 border-t border-zinc-100 pt-3 dark:border-zinc-800/60">
                     <p className="text-xs uppercase tracking-wide text-zinc-500">
-                      {recent.length > 0
-                        ? `Last ${recent.length} meeting${recent.length === 1 ? "" : "s"} together`
-                        : "Recent meetings together"}
+                      Recent meetings together
                     </p>
                     {recent.length === 0 ? (
                       <p className="mt-2 text-sm text-zinc-500">
@@ -256,14 +289,24 @@ export default async function EventDetailPage({
                       </p>
                     ) : (
                       <ul className="mt-2 flex flex-col gap-1.5">
-                        {recent.map((meeting) => (
+                        {recent.map(({ meeting, usedInPrep }) => (
                           <li key={meeting.id}>
                             <Link
                               href={`/events/${meeting.id}`}
-                              className="flex items-baseline justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                              className={`flex items-baseline justify-between gap-3 rounded-md px-2 py-1.5 text-sm transition-colors ${
+                                usedInPrep
+                                  ? "bg-emerald-50 ring-1 ring-inset ring-emerald-200 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:ring-emerald-900 dark:hover:bg-emerald-950/60"
+                                  : "hover:bg-zinc-50 dark:hover:bg-zinc-900"
+                              }`}
+                              title={usedInPrep ? "Used when preparing this meeting" : undefined}
                             >
                               <span className="flex items-center gap-2 truncate">
                                 <span className="truncate font-medium">{meeting.name}</span>
+                                {usedInPrep && (
+                                  <span className="shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                    In prep
+                                  </span>
+                                )}
                                 {meeting.fathomRecording && (
                                   <span
                                     className="shrink-0 text-green-600 dark:text-green-400"

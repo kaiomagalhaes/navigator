@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { getAuthedClient } from "@/lib/google";
 import { fetchDayEvents } from "@/lib/google-calendar";
 import { persistEvents } from "@/lib/events-store";
-import { getDaySync, listEventsForDay } from "@/db/queries";
+import { getDaySync, listEventsForDay, listSkippedSeriesIds } from "@/db/queries";
 import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/lib/format";
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
@@ -30,6 +30,8 @@ type AgendaEvent = {
   prepared: boolean;
   // Whether this is an occurrence of a recurring Google series.
   recurring: boolean;
+  // Whether this meeting's recurring series is marked "skip auto-prep".
+  skipPrep: boolean;
 };
 
 type DayResult =
@@ -55,6 +57,11 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
   const accounts = await db.query.googleAccounts.findMany();
   if (accounts.length === 0) return { status: "no-accounts" };
 
+  // Recurring series marked "skip auto-prep" — used to flag agenda rows.
+  const skipped = await listSkippedSeriesIds();
+  const isSkipped = (recurringEventId: string | null) =>
+    recurringEventId != null && skipped.has(recurringEventId);
+
   const stored = await listEventsForDay(dayStart, dayEnd);
   if (stored.length > 0) {
     return {
@@ -71,6 +78,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
           attendeeCount: e.participants.length,
           prepared: e.prep != null,
           recurring: e.recurringEventId != null,
+          skipPrep: isSkipped(e.recurringEventId),
         }))
       ),
     };
@@ -98,6 +106,7 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       attendeeCount: e.attendees.length,
       prepared: false, // just pulled from Google; not prepared yet
       recurring: e.recurringEventId != null,
+      skipPrep: isSkipped(e.recurringEventId),
     }));
 
     return { status: "ok", events: dedupe(events) };
@@ -155,7 +164,9 @@ export default async function Home({
   const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
   const daySync = await getDaySync(dateKey);
-  const unpreparedCount = events.filter((e) => !e.prepared).length;
+  // Skipped-series meetings aren't prepped by the batch route, so exclude them
+  // from the button count (keeps "Prep N meetings" in sync with what runs).
+  const unpreparedCount = events.filter((e) => !e.prepared && !e.skipPrep).length;
 
   // "Happening now" / "Up next" only make sense for today.
   const nextUp = isToday ? events.find((e) => !e.isAllDay && e.endsAt > now) : undefined;
@@ -281,6 +292,14 @@ export default async function Home({
                         title="Recurring meeting"
                       >
                         <span aria-hidden>🔁</span> Recurring
+                      </span>
+                    )}
+                    {event.skipPrep && (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-full bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                        title="Excluded from auto-prep"
+                      >
+                        Prep off
                       </span>
                     )}
                   </div>

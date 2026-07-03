@@ -1,6 +1,8 @@
 import Link from "next/link";
 import type { StoredPrep } from "@/lib/prepare";
 import { formatDate } from "@/lib/format";
+import { isMe } from "@/lib/me";
+import { TodoistCopyButton } from "./todoist-copy-button";
 
 type Coaching = NonNullable<StoredPrep["coaching"]>;
 
@@ -35,33 +37,52 @@ export function PrepResults({ data }: { data: StoredPrep }) {
 
       {hasItems && (
         <div className="flex flex-col gap-4">
-          {data.groups.map((group) => (
-            <div
-              key={group.personId}
-              className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
-            >
-              <div className="flex items-baseline gap-2">
-                <span className="font-medium">{group.name}</span>
-                <span className="text-sm text-zinc-500">{group.email}</span>
+          {data.groups.map((group) => {
+            // Your own action items get a "→ Todoist" control so you can send
+            // them straight to your task list before the meeting.
+            const mine = isMe(group.email);
+            return (
+              <div
+                key={group.personId}
+                className="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium">{group.name}</span>
+                  <span className="text-sm text-zinc-500">{group.email}</span>
+                  {mine && (
+                    <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+                      you
+                    </span>
+                  )}
+                </div>
+                <ul className="mt-3 flex flex-col gap-2">
+                  {group.items.map((item) => (
+                    <li key={item.id} className="flex flex-col gap-0.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <span
+                          className={item.copied ? "text-sm text-zinc-400 line-through" : "text-sm"}
+                        >
+                          {item.text}
+                        </span>
+                        {mine && (
+                          <span className="shrink-0">
+                            <TodoistCopyButton todoId={item.id} copied={item.copied} />
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-zinc-500">
+                        <Link href={`/events/${item.meetingId}`} className="hover:underline">
+                          {item.meetingName}
+                        </Link>{" "}
+                        · {formatDate(item.meetingDate)}
+                        {!mine && item.copied ? " · in Todoist" : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <ul className="mt-3 flex flex-col gap-2">
-                {group.items.map((item) => (
-                  <li key={item.id} className="flex flex-col gap-0.5">
-                    <span className={item.copied ? "text-sm text-zinc-400 line-through" : "text-sm"}>
-                      {item.text}
-                    </span>
-                    <span className="text-xs text-zinc-500">
-                      <Link href={`/events/${item.meetingId}`} className="hover:underline">
-                        {item.meetingName}
-                      </Link>{" "}
-                      · {formatDate(item.meetingDate)}
-                      {item.copied ? " · in Todoist" : ""}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

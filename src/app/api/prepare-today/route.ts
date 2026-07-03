@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { auth } from "@/auth";
 import { parseDayParam, dayWindow, toDateParam } from "@/lib/format";
-import { listEventsForDay } from "@/db/queries";
+import { listEventsForDay, listSkippedSeriesIds } from "@/db/queries";
 import { generatePrep } from "@/lib/prepare";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +22,12 @@ export async function POST(request: NextRequest) {
   const { dayStart, dayEnd } = dayWindow(parseDayParam(date));
 
   const events = await listEventsForDay(dayStart, dayEnd);
-  const pending = events.filter((e) => e.prep == null);
+  // Recurring series the user marked "skip prep" are excluded from batch prep
+  // (they can still be prepared manually from the event page).
+  const skipped = await listSkippedSeriesIds();
+  const pending = events.filter(
+    (e) => e.prep == null && !(e.recurringEventId && skipped.has(e.recurringEventId))
+  );
 
   let prepared = 0;
   for (const event of pending) {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { calendarEvents, googleAccounts, todos } from "@/db/schema";
+import { calendarEvents, googleAccounts, seriesPrepSettings, todos } from "@/db/schema";
 import { getEvent } from "@/db/queries";
 import { FathomApiError } from "@/lib/fathom";
 import { findMeetingForEvent, type MatchableEvent } from "@/lib/fathom-meetings";
@@ -277,6 +277,31 @@ export async function setMeetingReviewed(
     return {};
   } catch (err) {
     console.error("[setMeetingReviewed]", err);
+    return { error: "Could not update the meeting. Please try again." };
+  }
+}
+
+// Mark a recurring series as "skip prep" (or unmark it). When skipped, batch
+// prep — the home page's first-visit auto-prep and the "Prep N meetings" button
+// (both via /api/prepare-today) — ignores every occurrence of the series. It can
+// still be prepared manually from the event page (prepareMeeting is unaffected).
+export async function setSeriesSkipPrep(
+  recurringEventId: string,
+  skip: boolean
+): Promise<{ error?: string }> {
+  if (!recurringEventId) return { error: "Missing recurring meeting." };
+  try {
+    await db
+      .insert(seriesPrepSettings)
+      .values({ recurringEventId, skipPrep: skip })
+      .onConflictDoUpdate({
+        target: seriesPrepSettings.recurringEventId,
+        set: { skipPrep: skip, updatedAt: new Date() },
+      });
+    revalidatePath("/");
+    return {};
+  } catch (err) {
+    console.error("[setSeriesSkipPrep]", err);
     return { error: "Could not update the meeting. Please try again." };
   }
 }

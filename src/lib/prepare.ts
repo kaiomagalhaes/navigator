@@ -100,21 +100,20 @@ export async function generatePrep(eventId: string): Promise<PrepareState> {
 
   // Union of each attendee's last 3 past meetings (this event excluded). For a
   // recurring meeting, restrict that history to prior occurrences of the same
-  // series (current.recurringEventId); for a one-off it's null → any meetings.
-  if (current.recurringEventId) {
+  // series — matched by series id or identical name (so older, untagged
+  // occurrences still count). For a one-off it's null → any meetings.
+  const series = current.recurringEventId
+    ? { id: current.recurringEventId, name: current.name }
+    : null;
+  if (series) {
     console.log(
-      `[prepareMeeting] recurring series ${current.recurringEventId} — scoping history to this series`
+      `[prepareMeeting] recurring "${current.name}" (series ${current.recurringEventId}) — scoping history to this series`
     );
   }
   const meetingIds = new Set<string>();
   await Promise.all(
     current.participants.map(async ({ person }) => {
-      const recent = await listRecentMeetingsWithPerson(
-        person.id,
-        eventId,
-        3,
-        current.recurringEventId
-      );
+      const recent = await listRecentMeetingsWithPerson(person.id, eventId, 3, series);
       console.log(
         `[prepareMeeting]   ${person.name} <${person.email}> → ${recent.length} recent meeting(s)`
       );

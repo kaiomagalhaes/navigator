@@ -59,6 +59,16 @@ export const daySyncs = pgTable("day_syncs", {
   lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Per recurring-series prep preference, keyed by Google's recurring_event_id.
+// A row with skip_prep = true means batch prep (the home page's auto-prep and
+// "Prep N meetings" button) ignores every occurrence of that series; it can
+// still be prepared manually from the event page. See src/lib/prepare.ts.
+export const seriesPrepSettings = pgTable("series_prep_settings", {
+  recurringEventId: text("recurring_event_id").primaryKey(),
+  skipPrep: boolean("skip_prep").notNull().default(false),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const persons = pgTable("persons", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
@@ -182,3 +192,4 @@ export type GoogleAccount = typeof googleAccounts.$inferSelect;
 export type FathomRecording = typeof fathomRecordings.$inferSelect;
 export type Todo = typeof todos.$inferSelect;
 export type DaySync = typeof daySyncs.$inferSelect;
+export type SeriesPrepSettings = typeof seriesPrepSettings.$inferSelect;

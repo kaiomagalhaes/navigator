@@ -1,7 +1,15 @@
 import "server-only";
 import { and, asc, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { db } from "./index";
-import { calendarEvents, daySyncs, eventParticipants, googleAccounts, persons, todos } from "./schema";
+import {
+  calendarEvents,
+  daySyncs,
+  eventParticipants,
+  googleAccounts,
+  persons,
+  seriesPrepSettings,
+  todos,
+} from "./schema";
 
 // Connected Google accounts, without exposing stored tokens to callers/UI.
 export async function listGoogleAccounts() {
@@ -35,6 +43,25 @@ export async function listEventsForDay(from: Date, to: Date) {
   });
 }
 
+// The set of recurring-series ids the user has marked "skip prep". Batch prep
+// (auto-prep + "Prep N meetings") ignores occurrences of these series.
+export async function listSkippedSeriesIds(): Promise<Set<string>> {
+  const rows = await db.query.seriesPrepSettings.findMany({
+    where: eq(seriesPrepSettings.skipPrep, true),
+    columns: { recurringEventId: true },
+  });
+  return new Set(rows.map((r) => r.recurringEventId));
+}
+
+// Whether a given recurring series is marked "skip prep".
+export async function isSeriesSkipped(recurringEventId: string): Promise<boolean> {
+  const row = await db.query.seriesPrepSettings.findFirst({
+    where: eq(seriesPrepSettings.recurringEventId, recurringEventId),
+    columns: { skipPrep: true },
+  });
+  return row?.skipPrep ?? false;
+}
+
 // The last time a given day (local "YYYY-MM-DD") was synced from Google, or
 // null if it has never been synced. Powers the home page's "Last updated at".
 export async function getDaySync(date: string) {
@@ -45,14 +72,17 @@ export async function getDaySync(date: string) {
 // excluding one event (the one you're currently viewing). Used on the event
 // page to show "the last few times we met with each attendee".
 //
-// When `seriesId` is given (non-null), the results are restricted to occurrences
-// of that recurring series — so preparing a recurring meeting only pulls from
-// that meeting's prior occurrences, not every meeting with the person.
+// When `series` is given, results are restricted to prior occurrences of that
+// recurring meeting — so preparing a recurring meeting only pulls from its own
+// sequence, not every meeting with the person. A candidate matches by
+// recurring-series id OR by identical name: occurrences share both, and the
+// name fallback covers older occurrences stored before we tracked the series id
+// (or otherwise untagged), which would otherwise be missed.
 export async function listRecentMeetingsWithPerson(
   personId: string,
   excludeEventId: string,
   limit = 3,
-  seriesId?: string | null
+  series?: { id: string | null; name: string } | null
 ) {
   const rows = await db.query.eventParticipants.findMany({
     where: eq(eventParticipants.personId, personId),
@@ -66,7 +96,9 @@ export async function listRecentMeetingsWithPerson(
       (event) =>
         event.id !== excludeEventId &&
         event.startsAt < now &&
-        (seriesId == null || event.recurringEventId === seriesId)
+        (series == null ||
+          (series.id != null && event.recurringEventId === series.id) ||
+          event.name === series.name)
     )
     .sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
     .slice(0, limit);
