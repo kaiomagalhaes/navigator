@@ -21,6 +21,7 @@ function fingerprint(parts: {
   isAllDay: boolean;
   location: string | null;
   recurringEventId: string | null;
+  selfResponseStatus: string | null;
   emails: string[];
 }): string {
   return [
@@ -32,6 +33,9 @@ function fingerprint(parts: {
     parts.isAllDay,
     parts.location ?? "",
     parts.recurringEventId ?? "",
+    // Include our RSVP so changing it (e.g. declining) counts as a change and
+    // triggers a re-persist — otherwise the day view never learns we said no.
+    parts.selfResponseStatus ?? "",
     [...parts.emails].map((e) => e.toLowerCase()).sort().join(","),
   ].join("|");
 }
@@ -97,6 +101,7 @@ export async function syncDay(
         isAllDay: e.isAllDay,
         location: e.location,
         recurringEventId: e.recurringEventId,
+        selfResponseStatus: e.selfResponseStatus,
         emails: e.participants.map((p) => p.person.email),
       })
     );
@@ -112,6 +117,7 @@ export async function syncDay(
         isAllDay: e.isAllDay,
         location: e.location,
         recurringEventId: e.recurringEventId,
+        selfResponseStatus: e.selfResponseStatus,
         emails: e.attendees.map((a) => a.email),
       })
     )

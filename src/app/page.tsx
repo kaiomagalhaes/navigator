@@ -91,11 +91,17 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
 
   const stored = await listEventsForDay(dayStart, dayEnd);
   if (stored.length > 0) {
+    // A meeting can live on more than one calendar (same Google id). If we
+    // declined it on any of them, hide it everywhere — declining once means
+    // we're not going.
+    const declinedKeys = new Set(
+      stored.filter((e) => e.selfResponseStatus === "declined").map((e) => e.googleEventId ?? e.id)
+    );
     return {
       status: "ok",
       events: dedupe(
         stored
-          .filter((e) => e.selfResponseStatus !== "declined")
+          .filter((e) => !declinedKeys.has(e.googleEventId ?? e.id))
           .map((e) => ({
           id: e.id,
           googleEventId: e.googleEventId,
@@ -126,9 +132,13 @@ async function getDayEvents(dayStart: Date, dayEnd: Date): Promise<DayResult> {
       })
     );
 
-    const events = perAccount
-      .flat()
-      .filter((e) => e.selfResponseStatus !== "declined")
+    const flat = perAccount.flat();
+    // Hide a meeting we declined on any calendar (see the stored path above).
+    const declinedKeys = new Set(
+      flat.filter((e) => e.selfResponseStatus === "declined").map((e) => e.googleEventId ?? e.id)
+    );
+    const events = flat
+      .filter((e) => !declinedKeys.has(e.googleEventId ?? e.id))
       .map((e) => ({
       id: e.id,
       googleEventId: e.googleEventId,
