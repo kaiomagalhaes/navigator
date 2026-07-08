@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { getAuthedClient } from "@/lib/google";
 import { fetchDayEvents } from "@/lib/google-calendar";
 import { persistEvents } from "@/lib/events-store";
-import { getDaySync, listEventsForDay, listSkippedSeriesIds } from "@/db/queries";
+import { getDaySync, listEventsForDay, listPersonNames, listSkippedSeriesIds } from "@/db/queries";
 import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/lib/format";
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
@@ -241,6 +241,9 @@ export default async function Home({
   // "today" is always the real today, regardless of the day being browsed).
   const todayTasks = isToday ? await getTodayTasks() : null;
   const todayDateKey = toDateParam(todayStart);
+  // People roster for the quick-add modal's @mention dropdown; skipped entirely
+  // when Todoist isn't configured (the button doesn't render then).
+  const mentionPeople = process.env.TODOIST_API_TOKEN ? await listPersonNames() : [];
   // Skipped-series meetings aren't prepped by the batch route, so exclude them
   // from the button count (keeps "Prep N meetings" in sync with what runs).
   const unpreparedCount = events.filter((e) => !e.prepared && !e.skipPrep).length;
@@ -291,7 +294,7 @@ export default async function Home({
         <div className="flex items-center gap-2">
           {/* Adding a to-do is day-independent (always today/tomorrow), so it
               shows whenever Todoist is configured, whatever day is browsed. */}
-          {process.env.TODOIST_API_TOKEN && <QuickAddTodo />}
+          {process.env.TODOIST_API_TOKEN && <QuickAddTodo people={mentionPeople} />}
           <DateNav date={dateKey} today={toDateParam(todayStart)} />
         </div>
       </div>

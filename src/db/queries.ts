@@ -188,6 +188,23 @@ export async function listTodosForEmails(emails: string[]) {
   });
 }
 
+// One entry in the @mention roster: `label` is what gets displayed and
+// inserted (name, falling back to the email local-part), `email` is the
+// secondary line and second filter target.
+export type MentionPerson = { id: string; label: string; email: string };
+
+// Lightweight people roster for the quick-add modal's @mention dropdown —
+// three columns, no relations (listPersons eagerly loads participations).
+export async function listPersonNames(): Promise<MentionPerson[]> {
+  const rows = await db.query.persons.findMany({
+    columns: { id: true, name: true, email: true },
+    orderBy: [asc(persons.name)],
+  });
+  return rows
+    .map((p) => ({ id: p.id, label: p.name.trim() || p.email.split("@")[0], email: p.email }))
+    .filter((p) => p.label !== "");
+}
+
 export async function listPersons() {
   return db.query.persons.findMany({
     orderBy: [asc(persons.name)],

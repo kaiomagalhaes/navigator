@@ -1,16 +1,23 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
+import { flushSync } from "react-dom";
 import { quickAddTodo } from "@/app/actions";
+import type { MentionPerson } from "@/db/queries";
 
-// "+ Add to-do" for the home page's Today's to-dos section: opens a native
-// <dialog> with a description field and a Today/Tomorrow choice, then creates
-// the task in the Todoist work project. Success closes the dialog (the action
+// "+ Add to-do" for the home page's top control row: opens a native <dialog>
+// with a description field and a Today/Tomorrow choice, then creates the task
+// in the Todoist work project. Success closes the dialog (the action
 // revalidates "/" so a today task appears in the list) and briefly flips the
 // trigger to "✓ Added" — the only visible signal for a tomorrow task, which
 // correctly doesn't join today's list. Failure keeps the dialog open with the
 // text preserved so the user can retry.
-export function QuickAddTodo() {
+//
+// Typing "@" (at the start of the text or after whitespace) opens a dropdown
+// of the app's people; selecting one splices "@Full Name " into the text. The
+// mention is plain text in the created Todoist task — a spelling aid, not an
+// assignment.
+export function QuickAddTodo({ people }: { people: MentionPerson[] }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [text, setText] = useState("");
@@ -19,11 +26,77 @@ export function QuickAddTodo() {
   const [added, setAdded] = useState(false);
   const [pending, startTransition] = useTransition();
 
+  // The active "@fragment" being typed: `start` is the index of the "@",
+  // `query` the text between it and the caret. Re-derived on every edit and
+  // caret move; null when the caret isn't inside a candidate mention. The
+  // dropdown is open iff a fragment exists AND at least one person matches —
+  // a completed mention ("@Kaio Magalhaes ") stops matching on its own, so no
+  // "committed mentions" bookkeeping is needed.
+  const [mention, setMention] = useState<{ start: number; query: string } | null>(null);
+  const [highlight, setHighlight] = useState(0);
+
+  const matches = useMemo(() => {
+    if (!mention) return [];
+    const q = mention.query.toLowerCase();
+    return people.filter(
+      (p) => p.label.toLowerCase().includes(q) || p.email.toLowerCase().includes(q)
+    );
+  }, [mention, people]);
+  const dropdownOpen = mention !== null && matches.length > 0;
+  // A shrinking result list must not strand the highlight out of range.
+  const active = Math.min(highlight, matches.length - 1);
+
+  // Find the candidate mention around the caret: the last "@" at the start of
+  // the text or after whitespace, with no other "@" and no newline before the
+  // caret. Spaces are allowed in the query (names contain them); zero matches
+  // simply hides the dropdown.
+  function updateMention(value: string, caret: number) {
+    const m = /(?:^|\s)@([^@\n]*)$/.exec(value.slice(0, caret));
+    if (!m) {
+      setMention(null);
+      return;
+    }
+    const query = m[1];
+    const start = caret - query.length - 1;
+    if (!mention || mention.query !== query || mention.start !== start) setHighlight(0);
+    setMention({ start, query });
+  }
+
+  function insertMention(person: MentionPerson) {
+    const el = textareaRef.current;
+    if (!el || !mention) return;
+    const inserted = `@${person.label} `;
+    // maxLength doesn't constrain programmatic values, so clamp here; the
+    // counter turning rose at 500 signals a truncated tail.
+    const next = (text.slice(0, mention.start) + inserted + text.slice(el.selectionStart)).slice(
+      0,
+      500
+    );
+    const caret = Math.min(mention.start + inserted.length, 500);
+    // Commit synchronously so the caret lands on the updated DOM value —
+    // React would otherwise snap it to the end on the programmatic change.
+    flushSync(() => {
+      setText(next);
+      setMention(null);
+    });
+    el.focus();
+    el.setSelectionRange(caret, caret);
+  }
+
+  function moveHighlight(delta: number) {
+    const next = (active + delta + matches.length) % matches.length;
+    setHighlight(next);
+    requestAnimationFrame(() => {
+      document.getElementById(`mention-option-${next}`)?.scrollIntoView({ block: "nearest" });
+    });
+  }
+
   function open() {
     // Fresh slate on every open — a draft abandoned by closing isn't kept.
     setText("");
     setDue("today");
     setError(null);
+    setMention(null);
     dialogRef.current?.showModal();
     textareaRef.current?.focus();
   }
@@ -47,6 +120,30 @@ export function QuickAddTodo() {
       setAdded(true);
       setTimeout(() => setAdded(false), 2000);
     });
+  }
+
+  function onTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Cmd/Ctrl+Enter always submits, even mid-mention.
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+      submit();
+      return;
+    }
+    if (!dropdownOpen) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      moveHighlight(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      moveHighlight(-1);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      insertMention(matches[active]);
+    } else if (e.key === "Escape") {
+      // preventDefault stops the keydown's default action — the <dialog>'s
+      // Escape-cancel — so only the dropdown closes here.
+      e.preventDefault();
+      setMention(null);
+    }
   }
 
   const segment = (value: "today" | "tomorrow", label: string) => (
@@ -119,21 +216,62 @@ export function QuickAddTodo() {
             </button>
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div className="relative flex flex-col gap-1">
             <textarea
               ref={textareaRef}
               value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if ((e.metaKey || e.ctrlKey) && e.key === "Enter") submit();
+              onChange={(e) => {
+                setText(e.target.value);
+                updateMention(e.target.value, e.target.selectionStart);
               }}
+              // Caret moves (click, arrows) can enter or leave a fragment.
+              onSelect={(e) => updateMention(e.currentTarget.value, e.currentTarget.selectionStart)}
+              onBlur={() => setMention(null)}
+              onKeyDown={onTextareaKeyDown}
               rows={3}
               maxLength={500}
               disabled={pending}
-              placeholder="What needs doing?"
+              placeholder="What needs doing? Type @ to mention someone"
               aria-label="To-do description"
+              aria-controls="mention-listbox"
+              aria-autocomplete="list"
+              aria-activedescendant={dropdownOpen ? `mention-option-${active}` : undefined}
               className="w-full resize-none rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none focus:ring-2 focus:ring-zinc-300 disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:placeholder:text-zinc-500 dark:focus:border-zinc-600 dark:focus:ring-zinc-700"
             />
+            {dropdownOpen && (
+              <div
+                id="mention-listbox"
+                role="listbox"
+                aria-label="People"
+                className="absolute left-0 right-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900"
+              >
+                {matches.map((p, i) => (
+                  <div
+                    key={p.id}
+                    id={`mention-option-${i}`}
+                    role="option"
+                    aria-selected={i === active}
+                    // mousedown (not click) so the textarea never blurs; hover
+                    // moves the highlight via real pointer motion only.
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      insertMention(p);
+                    }}
+                    onMouseMove={() => setHighlight(i)}
+                    className={`flex cursor-pointer items-baseline gap-2 px-3 py-1.5 text-sm ${
+                      i === active ? "bg-zinc-100 dark:bg-zinc-800" : ""
+                    }`}
+                  >
+                    <span className="shrink-0 font-medium text-zinc-900 dark:text-zinc-100">
+                      {p.label}
+                    </span>
+                    <span className="min-w-0 truncate text-xs text-zinc-400 dark:text-zinc-500">
+                      {p.email}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {text.length >= 450 && (
               <span
                 className={`self-end text-xs ${text.length >= 500 ? "text-rose-500" : "text-zinc-400"}`}
