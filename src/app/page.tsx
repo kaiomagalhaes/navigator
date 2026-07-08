@@ -340,14 +340,21 @@ export default async function Home({
       {result.status === "ok" && events.length > 0 && (
         <section className="flex flex-col gap-3">
           {events.map((event, i) => {
-            const accent = ACCENTS[i % ACCENTS.length];
             const isNext = eventKey(event) === nextKey;
             const isNow = isToday && !event.isAllDay && event.startsAt <= now && event.endsAt > now;
+            // On today's view, meetings that already ended fade to gray so the
+            // eye lands on what's still ahead.
+            const isPast = isToday && !event.isAllDay && event.endsAt <= now;
+            const accent = isPast
+              ? { bar: "bg-zinc-300 dark:bg-zinc-700", chip: CALENDAR_FALLBACK }
+              : ACCENTS[i % ACCENTS.length];
             return (
               <Link
                 key={eventKey(event)}
                 href={`/events/${event.id}`}
-                className="relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
+                className={`relative flex gap-4 overflow-hidden rounded-2xl border border-zinc-200 bg-white p-4 shadow-sm transition-transform hover:-translate-y-0.5 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700 ${
+                  isPast ? "opacity-60 grayscale hover:opacity-100 hover:grayscale-0" : ""
+                }`}
               >
                 <span className={`absolute inset-y-0 left-0 w-1.5 ${accent.bar}`} aria-hidden />
                 <div className="pl-2 text-2xl" aria-hidden>
