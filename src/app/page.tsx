@@ -10,6 +10,7 @@ import { DayLiveSync } from "@/components/day-live-sync";
 import { TodoistTaskItem } from "@/components/todoist-task";
 import { listTasksDueToday, type TodoistTask } from "@/lib/todoist";
 import { PrepareTodayOnce } from "@/components/prepare-today-once";
+import { QuickAddTodo } from "@/components/quick-add-todo";
 import { PrepareDayButton } from "@/components/prepare-day-button";
 
 // This page reads a day's agenda on every request (from the DB, falling back to
@@ -287,7 +288,12 @@ export default async function Home({
             </div>
           )}
         </div>
-        <DateNav date={dateKey} today={toDateParam(todayStart)} />
+        <div className="flex items-center gap-2">
+          {/* Adding a to-do is day-independent (always today/tomorrow), so it
+              shows whenever Todoist is configured, whatever day is browsed. */}
+          {process.env.TODOIST_API_TOKEN && <QuickAddTodo />}
+          <DateNav date={dateKey} today={toDateParam(todayStart)} />
+        </div>
       </div>
 
       {result.status === "no-accounts" && (

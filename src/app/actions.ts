@@ -282,6 +282,31 @@ export async function completeTodoistTask(taskId: string): Promise<CompleteTaskS
   }
 }
 
+export type QuickAddTodoState = { error?: string; created?: boolean };
+
+// Create a Todoist task in the work project from the home page's quick-add
+// modal, due today or tomorrow. Validation is repeated here (the client also
+// trims) because actions are callable with arbitrary arguments.
+export async function quickAddTodo(
+  content: string,
+  due: "today" | "tomorrow"
+): Promise<QuickAddTodoState> {
+  const trimmed = content.trim();
+  if (!trimmed) return { error: "Enter a description." };
+  if (trimmed.length > 500) return { error: "Keep it under 500 characters." };
+  if (due !== "today" && due !== "tomorrow") return { error: "Invalid due date." };
+
+  try {
+    await createTask({ content: trimmed, dueString: due, projectId: primaryProjectId() });
+    revalidatePath("/");
+    revalidatePath("/todos");
+    return { created: true };
+  } catch (err) {
+    console.error("[quickAddTodo]", err);
+    return { error: describeTodoistError(err) };
+  }
+}
+
 // Copy a meeting to-do into Todoist, due today or tomorrow, then remember the
 // created task id so the event page can show the to-do crossed off. No-ops if
 // the to-do was already copied.
