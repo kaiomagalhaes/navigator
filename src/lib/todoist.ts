@@ -122,14 +122,9 @@ async function listTasksMatching(filter: string): Promise<TodoistTask[]> {
   });
 }
 
-// Every work-project task due today or overdue (To Dos page).
+// Every work-project task due today or overdue (home and To Dos pages).
 export async function listTasksDueTodayOrOverdue(): Promise<TodoistTask[]> {
   return listTasksMatching("today | overdue");
-}
-
-// Work-project tasks due today (Activity page's "today's to-dos").
-export async function listTasksDueToday(): Promise<TodoistTask[]> {
-  return listTasksMatching("today");
 }
 
 // Complete (close) a task in Todoist. For a recurring task this advances it to

@@ -8,7 +8,7 @@ import { formatTime, formatDay, toDateParam, parseDayParam, dayWindow } from "@/
 import { DateNav } from "@/components/date-nav";
 import { DayLiveSync } from "@/components/day-live-sync";
 import { TodoistTaskItem } from "@/components/todoist-task";
-import { listTasksDueToday, type TodoistTask } from "@/lib/todoist";
+import { listTasksDueTodayOrOverdue, type TodoistTask } from "@/lib/todoist";
 import { PrepareTodayOnce } from "@/components/prepare-today-once";
 import { QuickAddTodo } from "@/components/quick-add-todo";
 import { PrepareDayButton } from "@/components/prepare-day-button";
@@ -169,12 +169,12 @@ type TodoistResult =
   | { status: "not-configured" }
   | { status: "error" };
 
-// Today's tasks from the configured work projects (TODOIST_PROJECT_IDS), shown
-// on the home page when viewing today.
+// Tasks due today or overdue from the configured work projects
+// (TODOIST_PROJECT_IDS), shown on the home page when viewing today.
 async function getTodayTasks(): Promise<TodoistResult> {
   if (!process.env.TODOIST_API_TOKEN) return { status: "not-configured" };
   try {
-    return { status: "ok", tasks: await listTasksDueToday() };
+    return { status: "ok", tasks: await listTasksDueTodayOrOverdue() };
   } catch (err) {
     console.error("[home] failed to load Todoist tasks", err);
     return { status: "error" };
@@ -237,8 +237,8 @@ export default async function Home({
   const result = await getDayEvents(dayStart, dayEnd);
   const events = result.status === "ok" ? result.events : [];
   const daySync = await getDaySync(dateKey);
-  // Today's work-project to-dos — only when actually viewing today (Todoist
-  // "today" is always the real today, regardless of the day being browsed).
+  // Work-project to-dos due today or overdue — only when actually viewing today
+  // (Todoist filters are relative to the real today, not the day being browsed).
   const todayTasks = isToday ? await getTodayTasks() : null;
   const todayDateKey = toDateParam(todayStart);
   // People roster for the quick-add modal's @mention dropdown; skipped entirely
@@ -426,7 +426,7 @@ export default async function Home({
             </h2>
             {todayTasks.status === "ok" && (
               <span className="text-xs text-zinc-400">
-                {todayTasks.tasks.length} from your work projects
+                {todayTasks.tasks.length} due or overdue from your work projects
               </span>
             )}
           </div>
@@ -434,7 +434,7 @@ export default async function Home({
           {todayTasks.status === "error" ? (
             <p className="text-sm text-zinc-500">Couldn&apos;t reach Todoist right now.</p>
           ) : todayTasks.tasks.length === 0 ? (
-            <p className="text-sm text-zinc-500">Nothing due today in your work projects. 🎉</p>
+            <p className="text-sm text-zinc-500">Nothing due or overdue in your work projects. 🎉</p>
           ) : (
             <ul className="flex flex-col gap-2">
               {todayTasks.tasks.map((task) => (
